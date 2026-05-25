@@ -12,7 +12,7 @@ services:
     privileged: true
     ports:
       - "5554:5554"
-      - "127.0.0.1:5555:5555"
+      - "5555:5555"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -32,7 +32,7 @@ services:
     privileged: true
     ports:
       - "5554:5554"
-      - "127.0.0.1:5555:5555"
+      - "5555:5555"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -54,7 +54,7 @@ services:
     privileged: true
     ports:
       - "5554:5554"
-      - "127.0.0.1:5555:5555"
+      - "5555:5555"
       - "8081:8081"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -78,7 +78,7 @@ services:
     privileged: true
     ports:
       - "5554:5554"
-      - "127.0.0.1:5555:5555"
+      - "5555:5555"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -154,7 +154,7 @@ services:
     privileged: true
     ports:
       - "5554:5554"
-      - "127.0.0.1:5555:5555"
+      - "5555:5555"
       - "8081:8081"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -186,7 +186,7 @@ services:
     privileged: true
     ports:
       - "5554:5554"
-      - "127.0.0.1:5555:5555"
+      - "5555:5555"
     environment:
       - MEMORY=4096
       - CORES=2
