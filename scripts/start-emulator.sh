@@ -6,17 +6,34 @@ set -e
 # Minimal Android emulator with direct exec (no supervisord)
 # ============================================================
 
+export USER=root
+
 OPT_MEMORY=${MEMORY:-4096}
 OPT_CORES=${CORES:-2}
 OPT_DEVICE=${DEVICE_ID:-pixel}
 EMULATOR_CONSOLE_PORT=5554
 ADB_PORT=5555
 
+# --- GPU mode setup (must happen before emulator starts) ---
+if [ "$GPU_ACCELERATED" = "true" ]; then
+    export DISPLAY=":0.0"
+    export GPU_MODE="host"
+    Xvfb "$DISPLAY" -screen 0 1920x1080x16 -nolisten tcp &
+    sleep 2
+elif [ "${HEADLESS:-true}" != "true" ]; then
+    export DISPLAY=":0.0"
+    export GPU_MODE="swiftshader_indirect"
+    Xvfb "$DISPLAY" -screen 0 1920x1080x16 -nolisten tcp &
+    sleep 2
+else
+    export GPU_MODE="swiftshader_indirect"
+fi
+
 echo "============================================"
 echo " docker-android-lite"
 echo " API: $API_LEVEL | Device: $OPT_DEVICE"
 echo " Memory: ${OPT_MEMORY}MB | Cores: $OPT_CORES"
-echo " GPU: $GPU_MODE"
+echo " GPU: $GPU_MODE | Headless: ${HEADLESS:-true}"
 echo "============================================"
 
 # --- ADB server on all interfaces ---
@@ -29,14 +46,14 @@ if [ -n "$LOCAL_IP" ]; then
     socat tcp-listen:"$ADB_PORT",bind="$LOCAL_IP",fork tcp:127.0.0.1:"$ADB_PORT" &
 fi
 
+# --- Clean stale locks from crashed runs ---
+rm -f "$ANDROID_AVD_HOME/android.avd/"*.lock 2>/dev/null
+pkill -9 -f "qemu-system" 2>/dev/null; sleep 1
+
 # --- Create AVD if not exists ---
 AVD_EXISTS=$(avdmanager list avd 2>/dev/null | grep -c "Name: android" || true)
 if [ "$AVD_EXISTS" -ge 1 ]; then
     echo "[emu] Using existing AVD"
-    # Clean stale locks from crashed runs
-    rm -f "$ANDROID_AVD_HOME/android.avd/"*.lock 2>/dev/null
-    # Also kill any zombie emulator processes
-    pkill -9 -f "qemu-system" 2>/dev/null; sleep 2
 else
     echo "[emu] Creating AVD (device: $OPT_DEVICE, ABI: $ABI)..."
     echo no | avdmanager create avd \
@@ -44,30 +61,22 @@ else
         --package "$PACKAGE_PATH" --device "$OPT_DEVICE"
 fi
 
-# --- GPU mode ---
-if [ "$GPU_ACCELERATED" = "true" ]; then
-    export DISPLAY=":0.0"
-    export GPU_MODE="host"
-    Xvfb "$DISPLAY" -screen 0 1920x1080x16 -nolisten tcp &
-    echo "[emu] GPU: host (hardware accelerated)"
-else
-    export GPU_MODE="swiftshader_indirect"
-    echo "[emu] GPU: swiftshader (software rendering)"
+# --- Build emulator flags ---
+EMU_FLAGS="-avd android"
+EMU_FLAGS="$EMU_FLAGS -gpu $GPU_MODE"
+EMU_FLAGS="$EMU_FLAGS -memory $OPT_MEMORY"
+EMU_FLAGS="$EMU_FLAGS -cores $OPT_CORES"
+EMU_FLAGS="$EMU_FLAGS -no-boot-anim"
+EMU_FLAGS="$EMU_FLAGS -no-snapshot"
+EMU_FLAGS="$EMU_FLAGS -skip-adb-auth"
+EMU_FLAGS="$EMU_FLAGS -ranchu"
+
+if [ "${HEADLESS:-true}" = "true" ]; then
+    EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"
 fi
 
-# --- Headless optimizations ---
-if [ "${HEADLESS:-true}" = "true" ]; then
-    WINDOW_FLAG="-no-window"
-    AUDIO_FLAG="-no-audio"
-else
-    WINDOW_FLAG=""
-    AUDIO_FLAG=""
-    # Start Xvfb for display if not GPU mode
-    if [ "$GPU_ACCELERATED" != "true" ]; then
-        export DISPLAY=":0.0"
-        Xvfb "$DISPLAY" -screen 0 1920x1080x16 -nolisten tcp &
-    fi
-fi
+# Add user extra flags
+EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
 
 # --- Wait for boot in background ---
 (
@@ -81,43 +90,32 @@ fi
             echo "[emu] Boot completed in ${ELAPSED}s"
 
             # Post-boot optimizations
+            adb shell settings put global window_animation_scale 0 2>/dev/null
+            adb shell settings put global transition_animation_scale 0 2>/dev/null
+            adb shell settings put global animator_duration_scale 0 2>/dev/null
+
             if [ "${HEADLESS:-true}" = "true" ]; then
                 adb shell settings put system screen_off_timeout 15000 2>/dev/null
-                adb shell settings put global window_animation_scale 0 2>/dev/null
-                adb shell settings put global transition_animation_scale 0 2>/dev/null
-                adb shell settings put global animator_duration_scale 0 2>/dev/null
                 adb shell settings put global low_power 1 2>/dev/null
                 adb shell input keyevent KEYCODE_POWER 2>/dev/null
                 echo "[emu] Headless optimizations applied"
             fi
 
-            # Disable animations for all modes
-            adb shell settings put global window_animation_scale 0 2>/dev/null
-            adb shell settings put global transition_animation_scale 0 2>/dev/null
-            adb shell settings put global animator_duration_scale 0 2>/dev/null
-
             echo "[emu] Ready — ADB: adb connect <host>:5555"
             echo "[emu] Ready — scrcpy: scrcpy -s <host>:5555"
 
             # --- Pro features (run sequentially after boot) ---
-
-            # Magisk root (playstore images only)
             if [ "${ROOTED:-false}" = "true" ] && [ -f /opt/scripts/magisk-first-boot.sh ]; then
                 RAMDISK="$ANDROID_SDK_ROOT/system-images/android-${API_LEVEL}/${ABI%/*}/${ARCHITECTURE}/ramdisk.img"
                 echo "[emu] Running Magisk root setup..."
-                /opt/scripts/magisk-first-boot.sh "$RAMDISK" &
-                MAGISK_PID=$!
-                wait $MAGISK_PID 2>/dev/null
+                /opt/scripts/magisk-first-boot.sh "$RAMDISK"
             fi
 
-            # Anti-emulator
             if [ -f /opt/scripts/anti-emu.sh ]; then
                 echo "[emu] Running anti-emu..."
-                /opt/scripts/anti-emu.sh &
-                wait $! 2>/dev/null
+                /opt/scripts/anti-emu.sh
             fi
 
-            # SSL bypass (mitmweb stays in foreground in background)
             if [ "${SSLBYPASS:-false}" = "true" ] && [ -f /opt/scripts/ssl-bypass.sh ]; then
                 echo "[emu] Running SSL bypass..."
                 /opt/scripts/ssl-bypass.sh &
@@ -134,14 +132,4 @@ fi
 
 # --- Launch emulator (foreground, PID 1 via exec) ---
 echo "[emu] Starting emulator..."
-exec emulator \
-    -avd android \
-    -gpu "$GPU_MODE" \
-    -memory "$OPT_MEMORY" \
-    -cores "$OPT_CORES" \
-    -no-boot-anim \
-    -no-snapshot \
-    -skip-adb-auth \
-    $WINDOW_FLAG \
-    $AUDIO_FLAG \
-    $EXTRA_FLAGS
+exec emulator $EMU_FLAGS

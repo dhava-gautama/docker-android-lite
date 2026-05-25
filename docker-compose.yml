@@ -1,19 +1,20 @@
 # docker-android-lite — Docker Compose Examples
-# Pick the service(s) you need: docker compose up <service-name>
+# Usage: docker compose up <service-name>
 
 services:
 
   # ============================================================
-  # 1. HEADLESS CI/CD — automated testing, no display
-  # Usage: docker compose up ci
-  # Connect: adb connect localhost:5555
+  # 1. HEADLESS CI/CD — automated testing
+  # adb connect localhost:5555
   # ============================================================
   ci:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5555:5555"
+      - "5554:5554"
+      - "127.0.0.1:5555:5555"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - MEMORY=4096
       - CORES=2
@@ -23,16 +24,17 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # 2. APP TESTING — with scrcpy screen viewing
-  # Usage: docker compose up app-test
-  # View:  scrcpy -s localhost:5555
+  # 2. APP TESTING — with scrcpy screen
+  # scrcpy -s localhost:5555
   # ============================================================
   app-test:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5555:5555"
+      - "5554:5554"
+      - "127.0.0.1:5555:5555"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - MEMORY=4096
       - CORES=2
@@ -44,18 +46,18 @@ services:
 
   # ============================================================
   # 3. SECURITY TESTING — root + anti-emu + SSL interception
-  # Usage: docker compose up pentest
-  # MITM:  http://localhost:8081 (password: mitmweb)
-  # Frida: adb shell su -c '/opt/anti-emu/frida-server -D &'
-  #        frida-ps -H localhost:5555
+  # mitmweb: http://localhost:8081 (password: mitmweb)
+  # frida:   frida-ps -H localhost:5555
   # ============================================================
   pentest:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5555:5555"
-      - "8081:8081"    # mitmweb UI
+      - "5554:5554"
+      - "127.0.0.1:5555:5555"
+      - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - MEMORY=4096
       - CORES=2
@@ -69,15 +71,16 @@ services:
 
   # ============================================================
   # 4. GPU ACCELERATED — NVIDIA CUDA rendering
-  # Usage: docker compose up gpu
-  # Requires: nvidia-docker runtime
+  # Requires: nvidia-container-toolkit
   # ============================================================
   gpu:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34-cuda
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5555:5555"
+      - "5554:5554"
+      - "127.0.0.1:5555:5555"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - MEMORY=8192
       - CORES=4
@@ -96,15 +99,14 @@ services:
 
   # ============================================================
   # 5. MULTI-DEVICE FARM — 3 emulators, different API levels
-  # Usage: docker compose up farm-api30 farm-api33 farm-api34
-  # Connect: adb connect localhost:5561 / 5563 / 5565
+  # adb connect localhost:5561 / 5563 / 5565
   # ============================================================
   farm-api30:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-30
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5561:5555"
+      - "5560:5554"
+      - "127.0.0.1:5561:5555"
     environment:
       - MEMORY=2048
       - CORES=1
@@ -115,10 +117,10 @@ services:
 
   farm-api33:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-33
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5563:5555"
+      - "5562:5554"
+      - "127.0.0.1:5563:5555"
     environment:
       - MEMORY=2048
       - CORES=1
@@ -129,10 +131,10 @@ services:
 
   farm-api34:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5565:5555"
+      - "5564:5554"
+      - "127.0.0.1:5565:5555"
     environment:
       - MEMORY=2048
       - CORES=1
@@ -142,42 +144,49 @@ services:
     restart: unless-stopped
 
   # ============================================================
-  # 6. BUG BOUNTY — rooted + stealth + Play Store + SSL + Frida
-  # Usage: docker compose up bounty
-  # MITM:  http://localhost:8081 (password: mitmweb)
-  # scrcpy: scrcpy -s localhost:5555
-  # Frida: frida-ps -H localhost:5555
+  # 6. BUG BOUNTY — full stealth + Play Store + GPU + SSL + Frida
+  # mitmweb: http://localhost:8081 (password: mitmweb)
+  # scrcpy:  scrcpy -s localhost:5555
+  # frida:   frida-ps -H localhost:5555
   # ============================================================
   bounty:
-    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
-    devices:
-      - /dev/kvm:/dev/kvm
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore-cuda
+    privileged: true
     ports:
-      - "5555:5555"
+      - "5554:5554"
+      - "127.0.0.1:5555:5555"
       - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - MEMORY=8192
       - CORES=4
       - DEVICE_ID=pixel_8
+      - GPU_ACCELERATED=true
       - ROOTED=true
       - STRONGERANTIEMU=true
       - SSLBYPASS=true
       - HEADLESS=false
     volumes:
       - bounty-data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
 
   # ============================================================
-  # 7. MINIMAL — no SDK, mount externally (fastest rebuild)
-  # Usage: docker compose up minimal
-  # Mount your SDK at /opt/android
+  # 7. MINIMAL — no SDK, mount externally
   # ============================================================
   minimal:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34-minimal
-    devices:
-      - /dev/kvm:/dev/kvm
+    privileged: true
     ports:
-      - "5555:5555"
+      - "5554:5554"
+      - "127.0.0.1:5555:5555"
     environment:
       - MEMORY=4096
       - CORES=2
