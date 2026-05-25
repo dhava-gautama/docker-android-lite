@@ -35,6 +35,8 @@ if [ "$AVD_EXISTS" -ge 1 ]; then
     echo "[emu] Using existing AVD"
     # Clean stale locks from crashed runs
     rm -f "$ANDROID_AVD_HOME/android.avd/"*.lock 2>/dev/null
+    # Also kill any zombie emulator processes
+    pkill -9 -f "qemu-system" 2>/dev/null; sleep 2
 else
     echo "[emu] Creating AVD (device: $OPT_DEVICE, ABI: $ABI)..."
     echo no | avdmanager create avd \
@@ -139,6 +141,7 @@ exec emulator \
     -cores "$OPT_CORES" \
     -no-boot-anim \
     -no-snapshot \
+    -skip-adb-auth \
     $WINDOW_FLAG \
     $AUDIO_FLAG \
     $EXTRA_FLAGS
