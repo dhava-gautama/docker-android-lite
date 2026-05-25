@@ -137,6 +137,10 @@ docker compose up android-playstore  # Play Store
 | `GPU_ACCELERATED` | `false` (`true` for CUDA) | Use host GPU |
 | `EXTRA_FLAGS` | — | Additional emulator flags |
 | `INSTALL_ANDROID_SDK` | `1` | Set to `0` for minimal image |
+| **Pro features** | | |
+| `ROOTED` | `false` | Enable Magisk root (playstore images) |
+| `STRONGERANTIEMU` | `false` | Anti-emulator (Zygisk + resetprop + PIF) |
+| `SSLBYPASS` | `false` | SSL interception (mitmweb on :8081) |
 
 ## Persistent Data
 
@@ -153,23 +157,45 @@ Without a volume, the AVD is recreated on each start.
 |-----------|----------|
 | Android emulator + SDK | Yes |
 | ADB (port 5555) | Yes |
-| scrcpy server | Yes |
+| scrcpy | Yes |
 | KVM acceleration | Yes |
 | CUDA/GPU rendering | Yes (gpu tag) |
 | HEALTHCHECK | Yes |
-| socat port forwarding | Yes |
+| Magisk root | Yes (`ROOTED=true`) |
+| Anti-emulator bypass | Yes (`STRONGERANTIEMU=true`) |
+| SSL interception (mitmweb) | Yes (`SSLBYPASS=true`) |
+| Frida server | Yes (pre-staged) |
+| Zygisk modules | Yes (Assistant, TrickyStore, PIF) |
 
-## What's NOT Included (use docker-android-pro for these)
+## Pro Features (built-in)
 
-| Component | Why excluded |
-|-----------|-------------|
-| Appium | Saves ~500 MB |
-| noVNC web UI | Use scrcpy instead |
-| Selenium | Saves ~200 MB |
-| Node.js | Not needed |
-| Magisk root | Use docker-android-pro |
-| Anti-emulator bypass | Use docker-android-pro |
-| SSL interception | Use docker-android-pro |
+All pro features from docker-android-pro are included, controlled by env vars:
+
+| Feature | Env Var | Description |
+|---------|---------|-------------|
+| **Magisk root** | `ROOTED=true` | rootAVD + auto-grant (playstore images) |
+| **Anti-emulator** | `STRONGERANTIEMU=true` | Zygisk modules + resetprop Pixel 8 spoof |
+| **SSL interception** | `SSLBYPASS=true` | mitmweb + AlwaysTrustUserCerts (port 8081) |
+| **Frida** | Pre-staged | Manual start: `adb shell su -c '/opt/anti-emu/frida-server -D &'` |
+
+```bash
+# Full stealth: root + anti-emu + SSL interception
+docker run -d --device /dev/kvm -p 5555:5555 -p 8081:8081 \
+  -e ROOTED=true -e STRONGERANTIEMU=true -e SSLBYPASS=true \
+  -v data:/data \
+  ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
+
+# mitmweb UI: http://<host>:8081 (password: mitmweb)
+```
+
+## What's NOT Included (keeps it small)
+
+| Component | Why excluded | Alternative |
+|-----------|-------------|-------------|
+| Appium | Saves ~500 MB | ADB directly |
+| noVNC web UI | Saves ~100 MB | scrcpy |
+| Selenium | Saves ~200 MB | ADB + scrcpy |
+| Node.js | Saves ~200 MB | Not needed |
 
 ## Building
 

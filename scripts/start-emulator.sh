@@ -96,6 +96,30 @@ fi
 
             echo "[emu] Ready — ADB: adb connect <host>:5555"
             echo "[emu] Ready — scrcpy: scrcpy -s <host>:5555"
+
+            # --- Pro features (run sequentially after boot) ---
+
+            # Magisk root (playstore images only)
+            if [ "${ROOTED:-false}" = "true" ] && [ -f /opt/scripts/magisk-first-boot.sh ]; then
+                RAMDISK="$ANDROID_SDK_ROOT/system-images/android-${API_LEVEL}/${ABI%/*}/${ARCHITECTURE}/ramdisk.img"
+                echo "[emu] Running Magisk root setup..."
+                /opt/scripts/magisk-first-boot.sh "$RAMDISK" &
+                MAGISK_PID=$!
+                wait $MAGISK_PID 2>/dev/null
+            fi
+
+            # Anti-emulator
+            if [ -f /opt/scripts/anti-emu.sh ]; then
+                echo "[emu] Running anti-emu..."
+                /opt/scripts/anti-emu.sh &
+                wait $! 2>/dev/null
+            fi
+
+            # SSL bypass (mitmweb stays in foreground in background)
+            if [ "${SSLBYPASS:-false}" = "true" ] && [ -f /opt/scripts/ssl-bypass.sh ]; then
+                echo "[emu] Running SSL bypass..."
+                /opt/scripts/ssl-bypass.sh &
+            fi
             break
         fi
         sleep 5

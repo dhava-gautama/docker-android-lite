@@ -1,0 +1,34 @@
+# device_faker config — Google Pixel 8 (shiba) profile
+# Applied by default to all apps. Override per-app in [packages] section.
+
+[default]
+manufacturer = "Google"
+brand = "google"
+model = "Pixel 8"
+device = "shiba"
+product = "shiba"
+fingerprint = "google/shiba/shiba:14/AP4A.250405.002/12767828:user/release-keys"
+build_id = "AP4A.250405.002"
+android_version = "14"
+sdk_int = 34
+
+[default.custom_props]
+ro.hardware = "shiba"
+ro.product.board = "shiba"
+ro.bootloader = "slider-14.1-12385275"
+ro.baseband = "g5300q-241203-250108-B-12538801"
+ro.build.type = "user"
+ro.build.tags = "release-keys"
+ro.build.display.id = "AP4A.250405.002"
+ro.build.flavor = "shiba-user"
+ro.product.system.model = "Pixel 8"
+ro.product.system.brand = "google"
+ro.product.system.device = "shiba"
+ro.product.vendor.model = "Pixel 8"
+ro.product.vendor.brand = "google"
+ro.product.vendor.device = "shiba"
+
+# Per-app overrides (optional)
+# [packages."com.example.app"]
+# model = "SM-S921B"
+# manufacturer = "samsung"
