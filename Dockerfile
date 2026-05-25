@@ -31,6 +31,7 @@ ENV LD_LIBRARY_PATH="$ANDROID_SDK_ROOT/emulator/lib64:$ANDROID_SDK_ROOT/emulator
 
 # Install minimal dependencies + scrcpy
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-venv python3-pip \
         wget unzip socat iproute2 openssl xz-utils git lzip \
         libdrm2 libgbm1 libasound2t64 libnss3 \
         libxkbcommon0 libxshmfence1 libpulse0 \
