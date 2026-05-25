@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libdrm2 libgbm1 libasound2t64 libnss3 \
         libxkbcommon0 libxshmfence1 libpulse0 \
         libdbus-glib-1-2 libxcursor1 \
-        libvulkan1 libegl1-mesa libgl1-mesa-dri \
+        libvulkan1 libegl-mesa0 libgl1-mesa-dri \
         xvfb scrcpy \
     && rm -rf /var/lib/apt/lists/*
 
