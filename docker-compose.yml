@@ -1,37 +1,90 @@
+# docker-android-lite — Docker Compose Examples
+# Pick the service(s) you need: docker compose up <service-name>
+
 services:
-  # Standard headless emulator (CPU rendering)
-  android:
+
+  # ============================================================
+  # 1. HEADLESS CI/CD — automated testing, no display
+  # Usage: docker compose up ci
+  # Connect: adb connect localhost:5555
+  # ============================================================
+  ci:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34
     devices:
       - /dev/kvm:/dev/kvm
     ports:
-      - "5555:5555"    # ADB
-      - "5554:5554"    # Console
+      - "5555:5555"
     environment:
-      - DEVICE_ID=pixel
       - MEMORY=4096
       - CORES=2
       - HEADLESS=true
     volumes:
-      - android-data:/data
+      - ci-data:/data
     restart: unless-stopped
 
-  # GPU-accelerated emulator (NVIDIA CUDA)
-  android-gpu:
+  # ============================================================
+  # 2. APP TESTING — with scrcpy screen viewing
+  # Usage: docker compose up app-test
+  # View:  scrcpy -s localhost:5555
+  # ============================================================
+  app-test:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5555:5555"
+    environment:
+      - MEMORY=4096
+      - CORES=2
+      - DEVICE_ID=pixel_8
+      - HEADLESS=false
+    volumes:
+      - app-test-data:/data
+    restart: unless-stopped
+
+  # ============================================================
+  # 3. SECURITY TESTING — root + anti-emu + SSL interception
+  # Usage: docker compose up pentest
+  # MITM:  http://localhost:8081 (password: mitmweb)
+  # Frida: adb shell su -c '/opt/anti-emu/frida-server -D &'
+  #        frida-ps -H localhost:5555
+  # ============================================================
+  pentest:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5555:5555"
+      - "8081:8081"    # mitmweb UI
+    environment:
+      - MEMORY=4096
+      - CORES=2
+      - ROOTED=true
+      - STRONGERANTIEMU=true
+      - SSLBYPASS=true
+      - HEADLESS=false
+    volumes:
+      - pentest-data:/data
+    restart: unless-stopped
+
+  # ============================================================
+  # 4. GPU ACCELERATED — NVIDIA CUDA rendering
+  # Usage: docker compose up gpu
+  # Requires: nvidia-docker runtime
+  # ============================================================
+  gpu:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34-cuda
     devices:
       - /dev/kvm:/dev/kvm
     ports:
-      - "5557:5555"
-      - "5556:5554"
+      - "5555:5555"
     environment:
-      - DEVICE_ID=pixel
-      - MEMORY=4096
+      - MEMORY=8192
       - CORES=4
       - GPU_ACCELERATED=true
-      - HEADLESS=true
+      - HEADLESS=false
     volumes:
-      - android-gpu-data:/data
+      - gpu-data:/data
     deploy:
       resources:
         reservations:
@@ -41,24 +94,104 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
-  # PlayStore variant
-  android-playstore:
+  # ============================================================
+  # 5. MULTI-DEVICE FARM — 3 emulators, different API levels
+  # Usage: docker compose up farm-api30 farm-api33 farm-api34
+  # Connect: adb connect localhost:5561 / 5563 / 5565
+  # ============================================================
+  farm-api30:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-30
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5561:5555"
+    environment:
+      - MEMORY=2048
+      - CORES=1
+      - HEADLESS=true
+    volumes:
+      - farm-30:/data
+    restart: unless-stopped
+
+  farm-api33:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-33
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5563:5555"
+    environment:
+      - MEMORY=2048
+      - CORES=1
+      - HEADLESS=true
+    volumes:
+      - farm-33:/data
+    restart: unless-stopped
+
+  farm-api34:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5565:5555"
+    environment:
+      - MEMORY=2048
+      - CORES=1
+      - HEADLESS=true
+    volumes:
+      - farm-34:/data
+    restart: unless-stopped
+
+  # ============================================================
+  # 6. BUG BOUNTY — rooted + stealth + Play Store + SSL + Frida
+  # Usage: docker compose up bounty
+  # MITM:  http://localhost:8081 (password: mitmweb)
+  # scrcpy: scrcpy -s localhost:5555
+  # Frida: frida-ps -H localhost:5555
+  # ============================================================
+  bounty:
     image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
     devices:
       - /dev/kvm:/dev/kvm
     ports:
-      - "5559:5555"
-      - "5558:5554"
+      - "5555:5555"
+      - "8081:8081"
     environment:
-      - DEVICE_ID=pixel
-      - MEMORY=4096
-      - CORES=2
-      - HEADLESS=true
+      - MEMORY=8192
+      - CORES=4
+      - DEVICE_ID=pixel_8
+      - ROOTED=true
+      - STRONGERANTIEMU=true
+      - SSLBYPASS=true
+      - HEADLESS=false
     volumes:
-      - android-store-data:/data
+      - bounty-data:/data
     restart: unless-stopped
 
+  # ============================================================
+  # 7. MINIMAL — no SDK, mount externally (fastest rebuild)
+  # Usage: docker compose up minimal
+  # Mount your SDK at /opt/android
+  # ============================================================
+  minimal:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-minimal
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5555:5555"
+    environment:
+      - MEMORY=4096
+      - CORES=2
+    volumes:
+      - /path/to/android-sdk:/opt/android:ro
+      - minimal-data:/data
+
 volumes:
-  android-data:
-  android-gpu-data:
-  android-store-data:
+  ci-data:
+  app-test-data:
+  pentest-data:
+  gpu-data:
+  farm-30:
+  farm-33:
+  farm-34:
+  bounty-data:
+  minimal-data:
