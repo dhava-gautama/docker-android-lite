@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+# No set -e — pkill/cleanup commands may fail harmlessly
 
 # ============================================================
 # docker-android-lite entrypoint
