@@ -1,0 +1,64 @@
+services:
+  # Standard headless emulator (CPU rendering)
+  android:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5555:5555"    # ADB
+      - "5554:5554"    # Console
+    environment:
+      - DEVICE_ID=pixel
+      - MEMORY=4096
+      - CORES=2
+      - HEADLESS=true
+    volumes:
+      - android-data:/data
+    restart: unless-stopped
+
+  # GPU-accelerated emulator (NVIDIA CUDA)
+  android-gpu:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-cuda
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5557:5555"
+      - "5556:5554"
+    environment:
+      - DEVICE_ID=pixel
+      - MEMORY=4096
+      - CORES=4
+      - GPU_ACCELERATED=true
+      - HEADLESS=true
+    volumes:
+      - android-gpu-data:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # PlayStore variant
+  android-playstore:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
+    devices:
+      - /dev/kvm:/dev/kvm
+    ports:
+      - "5559:5555"
+      - "5558:5554"
+    environment:
+      - DEVICE_ID=pixel
+      - MEMORY=4096
+      - CORES=2
+      - HEADLESS=true
+    volumes:
+      - android-store-data:/data
+    restart: unless-stopped
+
+volumes:
+  android-data:
+  android-gpu-data:
+  android-store-data:
