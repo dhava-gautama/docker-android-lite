@@ -101,8 +101,8 @@ EMU_FLAGS="$EMU_FLAGS -no-metrics"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
     EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"
-    # Disable unnecessary hardware emulation in headless mode
-    EMU_FLAGS="$EMU_FLAGS -no-camera -no-gnss"
+    # Disable camera emulation in headless mode
+    EMU_FLAGS="$EMU_FLAGS -camera-back none -camera-front none"
     EMU_FLAGS="$EMU_FLAGS -screen no-touch"
     EMU_FLAGS="$EMU_FLAGS -skin 480x800"
 fi
