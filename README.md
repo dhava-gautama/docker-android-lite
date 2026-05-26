@@ -42,20 +42,21 @@ scrcpy -s <host>:5555
 
 ### Flavors
 
-Two system image flavors available:
-
-| Flavor | System Image | `adb root` | Play Store | Root method |
-|--------|-------------|------------|------------|-------------|
-| `google_apis` | Dev-signed | Yes | Aurora Store (sideloaded) | `adb root` + Magisk |
-| `google_apis_playstore` | Production-signed | No | Native Google Play | Magisk only (shared adbkey required) |
+| Flavor | System Image | `adb root` | Google Services | Idle CPU | Idle RAM |
+|--------|-------------|------------|-----------------|----------|----------|
+| `default` (-lite) | AOSP only | Yes | None | ~3-4% | ~1.5 GB |
+| `google_apis` | Dev-signed | Yes | Yes + Aurora Store | ~9% | ~5 GB |
+| `google_apis_playstore` | Production-signed | No | Yes + native Play Store | ~9% | ~5 GB |
 
 ### Tags
 
 | Tag | Flavor | Description |
 |-----|--------|-------------|
-| `api-34` | google_apis | Android 14, headless |
+| `api-34-lite` | default | Android 14, no Google — lightest |
+| `api-30-lite` | default | Android 11, no Google — lightest |
+| `api-34` | google_apis | Android 14 + Google services |
 | `api-34-playstore` | google_apis | Android 14 + Aurora Store |
-| `api-34-gplaystore` | google_apis_playstore | Android 14 + native Google Play Store |
+| `api-34-gplaystore` | google_apis_playstore | Android 14 + native Play Store |
 | `api-34-cuda` | google_apis | Android 14 + NVIDIA GPU |
 | `api-34-playstore-cuda` | google_apis | Android 14 + Aurora Store + GPU |
 | `api-34-gplaystore-cuda` | google_apis_playstore | Android 14 + native Play Store + GPU |

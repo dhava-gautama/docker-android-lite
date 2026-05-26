@@ -60,6 +60,16 @@ jobs:
             dockerfile: "Dockerfile"
             tag_suffix: ""
 
+          # ---- default (no Google services — lightest) ----
+          - api_level: "34"
+            img_type: "default"
+            dockerfile: "Dockerfile"
+            tag_suffix: "-lite"
+          - api_level: "30"
+            img_type: "default"
+            dockerfile: "Dockerfile"
+            tag_suffix: "-lite"
+
           # ---- google_apis + Aurora Store (adb root works) ----
           - api_level: "34"
             img_type: "google_apis"
