@@ -32,8 +32,9 @@ jobs:
         continue-on-error: true
       - name: Validate scripts
         run: |
-          bash -n scripts/install-sdk.sh && echo "install-sdk.sh: OK"
-          bash -n scripts/start-emulator.sh && echo "start-emulator.sh: OK"
+          for f in scripts/*.sh; do
+            bash -n "$f" && echo "$f: OK" || exit 1
+          done
 
   build:
     needs: validate
@@ -41,7 +42,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # CPU variants
+          # ---- google_apis (adb root works) ----
           - api_level: "30"
             img_type: "google_apis"
             dockerfile: "Dockerfile"
@@ -58,29 +59,42 @@ jobs:
             img_type: "google_apis"
             dockerfile: "Dockerfile"
             tag_suffix: ""
-          # PlayStore variants
+
+          # ---- google_apis + Aurora Store (adb root works) ----
+          - api_level: "34"
+            img_type: "google_apis"
+            dockerfile: "Dockerfile"
+            tag_suffix: "-playstore"
+
+          # ---- google_apis_playstore (native Play Store, no adb root) ----
           - api_level: "33"
             img_type: "google_apis_playstore"
             dockerfile: "Dockerfile"
-            tag_suffix: "-playstore"
+            tag_suffix: "-gplaystore"
           - api_level: "34"
             img_type: "google_apis_playstore"
             dockerfile: "Dockerfile"
-            tag_suffix: "-playstore"
+            tag_suffix: "-gplaystore"
           - api_level: "35"
             img_type: "google_apis_playstore"
             dockerfile: "Dockerfile"
-            tag_suffix: "-playstore"
-          # CUDA variants
+            tag_suffix: "-gplaystore"
+
+          # ---- CUDA GPU variants ----
           - api_level: "34"
             img_type: "google_apis"
             dockerfile: "Dockerfile.gpu"
             tag_suffix: "-cuda"
           - api_level: "34"
-            img_type: "google_apis_playstore"
+            img_type: "google_apis"
             dockerfile: "Dockerfile.gpu"
             tag_suffix: "-playstore-cuda"
-          # Minimal (no SDK)
+          - api_level: "34"
+            img_type: "google_apis_playstore"
+            dockerfile: "Dockerfile.gpu"
+            tag_suffix: "-gplaystore-cuda"
+
+          # ---- Minimal (no SDK) ----
           - api_level: "34"
             img_type: "google_apis"
             dockerfile: "Dockerfile"

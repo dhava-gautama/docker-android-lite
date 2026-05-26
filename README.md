@@ -40,16 +40,26 @@ scrcpy -s <host>:5555
 
 ## Image Tags
 
-| Tag | Size | Description |
-|-----|------|-------------|
-| `api-34` | ~2.5 GB | Android 14, headless |
-| `api-35` | ~2.5 GB | Android 15, headless |
-| `api-33` | ~2.4 GB | Android 13, headless |
-| `api-30` | ~2.3 GB | Android 11, headless |
-| `api-34-playstore` | ~2.6 GB | Android 14 + Aurora Store |
-| `api-34-cuda` | ~2.3 GB | Android 14 + NVIDIA GPU |
-| `api-34-playstore-cuda` | ~2.4 GB | Android 14 + Aurora Store + GPU |
-| `api-34-minimal` | ~500 MB | No SDK — mount via volume |
+### Flavors
+
+Two system image flavors available:
+
+| Flavor | System Image | `adb root` | Play Store | Root method |
+|--------|-------------|------------|------------|-------------|
+| `google_apis` | Dev-signed | Yes | Aurora Store (sideloaded) | `adb root` + Magisk |
+| `google_apis_playstore` | Production-signed | No | Native Google Play | Magisk only (shared adbkey required) |
+
+### Tags
+
+| Tag | Flavor | Description |
+|-----|--------|-------------|
+| `api-34` | google_apis | Android 14, headless |
+| `api-34-playstore` | google_apis | Android 14 + Aurora Store |
+| `api-34-gplaystore` | google_apis_playstore | Android 14 + native Google Play Store |
+| `api-34-cuda` | google_apis | Android 14 + NVIDIA GPU |
+| `api-34-playstore-cuda` | google_apis | Android 14 + Aurora Store + GPU |
+| `api-34-gplaystore-cuda` | google_apis_playstore | Android 14 + native Play Store + GPU |
+| `api-34-minimal` | — | No SDK — mount via volume |
 
 ## Usage
 
@@ -209,14 +219,22 @@ docker build -t android-lite .
 ## Building
 
 ```bash
-# CPU variant
+# google_apis (supports adb root)
 docker build --build-arg API_LEVEL=34 -t android-lite:api-34 .
 
-# GPU variant
+# google_apis + Aurora Store
+docker build --build-arg API_LEVEL=34 -t android-lite:api-34-playstore .
+
+# google_apis_playstore (native Play Store, no adb root)
+docker build --build-arg API_LEVEL=34 --build-arg IMG_TYPE=google_apis_playstore \
+  -t android-lite:api-34-gplaystore .
+
+# GPU variant (google_apis)
 docker build -f Dockerfile.gpu --build-arg API_LEVEL=34 -t android-lite:api-34-cuda .
 
-# With Aurora Store (google_apis — supports adb root)
-docker build --build-arg API_LEVEL=34 -t android-lite:api-34-playstore .
+# GPU variant (google_apis_playstore)
+docker build -f Dockerfile.gpu --build-arg API_LEVEL=34 --build-arg IMG_TYPE=google_apis_playstore \
+  -t android-lite:api-34-gplaystore-cuda .
 
 # Minimal (no SDK, 500 MB)
 docker build --build-arg INSTALL_ANDROID_SDK=0 -t android-lite:minimal .
