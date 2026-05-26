@@ -127,8 +127,9 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
             adb shell settings put global animator_duration_scale 0 2>/dev/null
 
             if [ "${HEADLESS:-true}" = "true" ]; then
-                adb shell settings put system screen_off_timeout 1000 2>/dev/null
-                adb shell settings put global low_power 1 2>/dev/null
+                # Keep device awake for ADB (screen dims but doesn't sleep)
+                adb shell settings put global stay_on_while_plugged_in 3 2>/dev/null
+                adb shell settings put system screen_off_timeout 2147483647 2>/dev/null
                 adb shell settings put system screen_brightness 0 2>/dev/null
                 adb shell settings put system accelerometer_rotation 0 2>/dev/null
                 adb shell settings put global auto_sync 0 2>/dev/null
@@ -178,14 +179,11 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                 adb shell "echo 3 > /proc/sys/vm/drop_caches" 2>/dev/null
                 adb unroot 2>/dev/null
 
-                # Force doze mode for near-zero idle CPU
-                adb shell dumpsys deviceidle enable all 2>/dev/null
-                adb shell dumpsys deviceidle force-idle 2>/dev/null
-                # Restrict background network
+                # Restrict background network (saves CPU without breaking ADB)
                 adb shell cmd netpolicy set restrict-background true 2>/dev/null
-                # Screen off
-                adb shell input keyevent KEYCODE_POWER 2>/dev/null
-                echo "[emu] Headless optimizations applied (bloat killed + doze)"
+                # Ensure ADB stays responsive (disable doze for ADB shell)
+                adb shell dumpsys deviceidle disable 2>/dev/null
+                echo "[emu] Headless optimizations applied"
             fi
 
             echo "[emu] Ready — ADB: adb connect <host>:5555"
