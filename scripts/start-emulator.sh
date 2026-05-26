@@ -88,6 +88,8 @@ EMU_FLAGS="$EMU_FLAGS -no-sim"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
     EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"
+    # Reduce qemu idle CPU: lower vsync rate and disable unnecessary hw
+    EMU_FLAGS="$EMU_FLAGS -no-accel-check"
 fi
 
 # Add user extra flags
@@ -110,10 +112,18 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
             adb shell settings put global animator_duration_scale 0 2>/dev/null
 
             if [ "${HEADLESS:-true}" = "true" ]; then
-                adb shell settings put system screen_off_timeout 15000 2>/dev/null
+                adb shell settings put system screen_off_timeout 1000 2>/dev/null
                 adb shell settings put global low_power 1 2>/dev/null
+                adb shell settings put system screen_brightness 0 2>/dev/null
+                adb shell settings put system accelerometer_rotation 0 2>/dev/null
+                adb shell settings put global auto_sync 0 2>/dev/null
+                adb shell settings put secure location_mode 0 2>/dev/null
+                # Force doze mode for near-zero idle CPU
+                adb shell dumpsys deviceidle enable all 2>/dev/null
+                adb shell dumpsys deviceidle force-idle 2>/dev/null
+                # Screen off
                 adb shell input keyevent KEYCODE_POWER 2>/dev/null
-                echo "[emu] Headless optimizations applied"
+                echo "[emu] Headless optimizations applied (doze + screen off)"
             fi
 
             echo "[emu] Ready — ADB: adb connect <host>:5555"
