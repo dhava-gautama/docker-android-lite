@@ -37,7 +37,11 @@ echo " GPU: $GPU_MODE | Headless: ${HEADLESS:-true}"
 echo "============================================"
 
 # --- ADB server on all interfaces ---
-adb -a -P 5037 server nodaemon &
+# Disable USB monitoring (prevents Netlink SUBSYSTEM warnings in Docker)
+# ADB_USB=0 tells adb to skip USB device scanning entirely
+export ADB_USB=0
+export ADB_MDNS_AUTO_CONNECT=0
+adb -a -P 5037 server nodaemon 2>&1 | grep -v "Netlink: SUBSYSTEM" &
 
 # --- socat port forwarding: container IP → localhost ---
 LOCAL_IP=$(ip addr list eth0 2>/dev/null | grep "inet " | cut -d' ' -f6 | cut -d/ -f1)
@@ -45,6 +49,13 @@ if [ -n "$LOCAL_IP" ]; then
     socat tcp-listen:"$EMULATOR_CONSOLE_PORT",bind="$LOCAL_IP",fork tcp:127.0.0.1:"$EMULATOR_CONSOLE_PORT" &
     socat tcp-listen:"$ADB_PORT",bind="$LOCAL_IP",fork tcp:127.0.0.1:"$ADB_PORT" &
 fi
+
+# --- Suppress emulator warnings ---
+# Create missing ini file to suppress "Failed to process .ini file" warning
+mkdir -p /root/.android
+touch /root/.android/emu-update-last-check.ini
+# Create avd running dir to suppress "Using fallback path" warning
+mkdir -p /root/.android/avd/running
 
 # --- Clean stale locks from crashed runs ---
 rm -f "$ANDROID_AVD_HOME/android.avd/"*.lock 2>/dev/null
@@ -70,6 +81,12 @@ EMU_FLAGS="$EMU_FLAGS -no-boot-anim"
 EMU_FLAGS="$EMU_FLAGS -no-snapshot"
 EMU_FLAGS="$EMU_FLAGS -skip-adb-auth"
 EMU_FLAGS="$EMU_FLAGS -ranchu"
+# Disable ADB authentication so external clients connect without pubkey
+EMU_FLAGS="$EMU_FLAGS -prop ro.adb.secure=0"
+# Suppress modem IPv6 resolution failure (disable modem entirely in headless)
+EMU_FLAGS="$EMU_FLAGS -no-sim"
+# Suppress gRPC token warning by using token auth
+EMU_FLAGS="$EMU_FLAGS -grpc-use-token"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
     EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"

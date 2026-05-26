@@ -25,8 +25,10 @@ wait_for_boot() {
     return 1
 }
 
-# Check ROOTED env var
-if [ "${ROOTED:-yes}" != "yes" ]; then
+# Check ROOTED env var (accept "yes" or "true")
+ROOTED_VAL="${ROOTED:-yes}"
+ROOTED_VAL="${ROOTED_VAL,,}"  # lowercase
+if [ "$ROOTED_VAL" != "yes" ] && [ "$ROOTED_VAL" != "true" ]; then
     echo "[magisk] ROOTED=${ROOTED}, skipping."
     exit 0
 fi
