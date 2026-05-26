@@ -81,12 +81,11 @@ EMU_FLAGS="$EMU_FLAGS -no-boot-anim"
 EMU_FLAGS="$EMU_FLAGS -no-snapshot"
 EMU_FLAGS="$EMU_FLAGS -skip-adb-auth"
 EMU_FLAGS="$EMU_FLAGS -ranchu"
-# Disable ADB authentication so external clients connect without pubkey
-EMU_FLAGS="$EMU_FLAGS -prop ro.adb.secure=0"
-# Suppress modem IPv6 resolution failure (disable modem entirely in headless)
+# Disable ADB authentication — set via qemu prop (the only supported namespace)
+# and also via adb shell after boot (see post-boot section)
+EMU_FLAGS="$EMU_FLAGS -prop qemu.adb.secure=0"
+# Disable modem simulator to suppress IPv6 resolution errors
 EMU_FLAGS="$EMU_FLAGS -no-sim"
-# Suppress gRPC token warning by using token auth
-EMU_FLAGS="$EMU_FLAGS -grpc-use-token"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
     EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"
@@ -105,6 +104,10 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
         BOOT=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
         if [ "$BOOT" = "1" ]; then
             echo "[emu] Boot completed in ${ELAPSED}s"
+
+            # Disable ADB authentication for external connections
+            adb shell setprop ro.adb.secure 0 2>/dev/null
+            adb shell setprop service.adb.tcp.port 5555 2>/dev/null
 
             # Post-boot optimizations
             adb shell settings put global window_animation_scale 0 2>/dev/null
@@ -133,6 +136,11 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                 /opt/scripts/anti-emu.sh
             fi
 
+            if [ -f /opt/scripts/install-playstore.sh ]; then
+                echo "[emu] Installing Play Store..."
+                /opt/scripts/install-playstore.sh
+            fi
+
             if [ "${SSLBYPASS:-false}" = "true" ] && [ -f /opt/scripts/ssl-bypass.sh ]; then
                 echo "[emu] Running SSL bypass..."
                 /opt/scripts/ssl-bypass.sh &
@@ -148,5 +156,22 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
 ) &
 
 # --- Launch emulator (foreground, PID 1 via exec) ---
+# Suppress noisy warnings that cannot be disabled via flags:
+# - cannnot unmap ptr: QEMU memory protection (harmless)
+# - libX11: not needed in headless mode
+# - Basic token auth: gRPC auth mode info
+# - fallback path: emulator discovery dir
+# - Overwriting existing: emulator pid file
+# - Netsim Wifi: netsim disconnects (harmless)
+# - character device modem: IPv6 modem resolution (harmless with -no-sim)
 echo "[emu] Starting emulator..."
-exec emulator $EMU_FLAGS
+exec emulator $EMU_FLAGS 2> >(grep -v \
+    -e "cannnot unmap ptr" \
+    -e "Could not open libX11" \
+    -e "Basic token auth" \
+    -e "Using fallback path" \
+    -e "Overwriting existing" \
+    -e "Netsim Wifi.*CANCELLED" \
+    -e "character device modem" \
+    -e "ACTION REQUIRED" \
+    >&2)

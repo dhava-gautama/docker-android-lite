@@ -55,8 +55,17 @@ if [ ! -f "$MARKER" ]; then
     sleep 5
 
     RAMDISK_REL=$(echo "$RAMDISK_PATH" | sed "s|^$ANDROID_HOME/||")
-    echo "[magisk] Running rootAVD on: $RAMDISK_REL"
-    (cd /opt/magisk/rootAVD && export ANDROID_HOME && bash rootAVD.sh "$RAMDISK_REL" 2>&1)
+
+    # Create auto-root rc script — runs as root via Magisk's overlay.d
+    # Uses 'on property:sys.boot_completed=1' to ensure Magisk DB exists
+    mkdir -p /opt/magisk/rootAVD/ADB/
+    cat > /opt/magisk/rootAVD/ADB/auto-root.rc << 'RCEOF'
+on property:sys.boot_completed=1
+    exec u:r:magisk:s0 root root -- /system/bin/sh -c "while [ ! -S /dev/socket/magisk_log ]; do sleep 1; done; sleep 5; /data/adb/magisk/magisk --sqlite \"REPLACE INTO policies (uid,package_name,policy,until,logging,notification) VALUES(2000,'com.android.shell',2,0,1,1)\"; /data/adb/magisk/magisk --sqlite \"REPLACE INTO settings (key,value) VALUES('su_auto_response',1)\""
+RCEOF
+
+    echo "[magisk] Running rootAVD on: $RAMDISK_REL (with AddRCscripts)"
+    (cd /opt/magisk/rootAVD && export ANDROID_HOME && bash rootAVD.sh "$RAMDISK_REL" AddRCscripts 2>&1)
     ROOTAVD_EXIT=$?
     if [ $ROOTAVD_EXIT -ne 0 ]; then
         echo "[magisk] ERROR: rootAVD failed with exit code $ROOTAVD_EXIT"
@@ -127,6 +136,29 @@ echo "[magisk] Installing Magisk app..."
 $ADB install -r /opt/magisk/rootAVD/Apps/Magisk.apk 2>/dev/null || true
 sleep 3
 
+# --- CRITICAL: Write auto-root script before su grant attempts ---
+# magiskd is running as root, which means /data/adb/ exists and is accessible.
+# We push a script via ADB (writable as shell user) then use a trick:
+# The Magisk CLI binary at /data/adb/magisk/magisk can be called directly
+# by processes already running as root (like magiskd or init).
+# We create a post-fs-data.d script so on NEXT reboot, root is auto-granted.
+echo "[magisk] Writing auto-root post-fs-data.d script via magiskd..."
+$ADB shell "
+    # Create the script content in tmp (shell user can write here)
+    cat > /data/local/tmp/setup-auto-root.sh << 'SEOF'
+#!/system/bin/sh
+mkdir -p /data/adb/post-fs-data.d
+cat > /data/adb/post-fs-data.d/auto-root.sh << 'INNER'
+#!/system/bin/sh
+/data/adb/magisk/magisk --sqlite \"REPLACE INTO policies (uid,package_name,policy,until,logging,notification) VALUES(2000,'com.android.shell',2,0,1,1)\"
+/data/adb/magisk/magisk --sqlite \"REPLACE INTO settings (key,value) VALUES('su_auto_response',1)\"
+INNER
+chmod 755 /data/adb/post-fs-data.d/auto-root.sh
+/data/adb/post-fs-data.d/auto-root.sh
+SEOF
+    chmod 755 /data/local/tmp/setup-auto-root.sh
+" 2>/dev/null
+
 # Handle "Additional Setup" dialog (retry up to 3 times — dialog may appear late)
 echo "[magisk] Checking for Additional Setup dialog..."
 SETUP_HANDLED=false
@@ -174,6 +206,43 @@ $ADB shell "input keyevent KEYCODE_HOME" 2>/dev/null
 echo "[magisk] === PHASE 3: Auto-granting root ==="
 
 SU_GRANTED=false
+
+# --- Method 0: Write Magisk policy DB directly via Android's /data partition ---
+# magiskd runs as root inside the emulator. The emulator's /data is stored on
+# the AVD disk image. We can write to it via ADB by pushing a sqlite3 binary
+# or by using Magisk's own --sqlite command via a creative su chain.
+# Strategy: Create a post-fs-data.d script that auto-grants root on every boot,
+# then reboot so it takes effect before any su call.
+echo "[magisk] Trying Method 0: post-fs-data.d auto-root script..."
+# Push the auto-root script via ADB (doesn't need root — /data/local/tmp is writable)
+$ADB shell "cat > /data/local/tmp/install-auto-root.sh << 'AEOF'
+#!/system/bin/sh
+# This runs as root via magiskd's post-fs-data hook
+mkdir -p /data/adb/post-fs-data.d
+cat > /data/adb/post-fs-data.d/auto-root.sh << 'SEOF'
+#!/system/bin/sh
+# Auto-grant root to shell (uid 2000) and set auto-response to allow
+/data/adb/magisk/magisk --sqlite \"REPLACE INTO policies (uid,package_name,policy,until,logging,notification) VALUES(2000,'com.android.shell',2,0,1,1)\"
+/data/adb/magisk/magisk --sqlite \"REPLACE INTO settings (key,value) VALUES('su_auto_response',1)\"
+SEOF
+chmod 755 /data/adb/post-fs-data.d/auto-root.sh
+# Also run it now
+/data/adb/magisk/magisk --sqlite \"REPLACE INTO policies (uid,package_name,policy,until,logging,notification) VALUES(2000,'com.android.shell',2,0,1,1)\"
+/data/adb/magisk/magisk --sqlite \"REPLACE INTO settings (key,value) VALUES('su_auto_response',1)\"
+AEOF
+chmod 755 /data/local/tmp/install-auto-root.sh" 2>/dev/null
+
+# Trigger su request — this creates the deny entry in Magisk DB, but also
+# shows the approval dialog. We don't care about the result here.
+timeout 3 $ADB shell "su 0 -c '/data/local/tmp/install-auto-root.sh'" 2>/dev/null || true
+sleep 2
+
+# Check if su already works (unlikely on first attempt — Magisk denied it)
+SU_TEST=$($ADB shell "su 0 -c id" 2>&1)
+if echo "$SU_TEST" | grep -q "uid=0"; then
+    echo "[magisk] ROOT VERIFIED (Method 0): $SU_TEST"
+    SU_GRANTED=true
+fi
 
 # --- Method 1: adb root (works on userdebug/eng builds, NOT playstore) ---
 if ! $SU_GRANTED; then
@@ -277,6 +346,33 @@ if ! $SU_GRANTED; then
     SU_TEST=$($ADB shell "su 0 -c id" 2>&1)
     if echo "$SU_TEST" | grep -q "uid=0"; then
         echo "[magisk] ROOT VERIFIED (UI toggle): $SU_TEST"
+        SU_GRANTED=true
+    fi
+fi
+
+# --- Method 3: Reboot to trigger post-fs-data.d auto-root script ---
+# The auto-root script was written above. Reboot so magiskd runs it as root.
+if ! $SU_GRANTED; then
+    echo "[magisk] Trying Method 3: reboot for post-fs-data.d auto-root..."
+    # First, try to run setup-auto-root.sh via su (will be denied but may create the policy entry)
+    timeout 5 $ADB shell "su 0 -c '/data/local/tmp/setup-auto-root.sh'" 2>/dev/null || true
+    sleep 2
+
+    # Reboot
+    echo "[magisk] Rebooting for auto-root script execution..."
+    $ADB reboot 2>/dev/null || true
+    sleep 15
+    wait_for_boot
+    sleep 10
+
+    # Verify magiskd still running
+    if ! $ADB shell ps -A 2>/dev/null | grep -q magiskd; then
+        echo "[magisk] ERROR: magiskd not running after reboot"
+    fi
+
+    SU_TEST=$($ADB shell "su 0 -c id" 2>&1)
+    if echo "$SU_TEST" | grep -q "uid=0"; then
+        echo "[magisk] ROOT VERIFIED (Method 3 - post-fs-data.d): $SU_TEST"
         SU_GRANTED=true
     fi
 fi
