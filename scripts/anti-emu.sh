@@ -146,7 +146,9 @@ if $HAS_MAGISK; then
     $ADB shell "$PROP_CMD ro.product.vendor.brand 'google'" 2>/dev/null
     $ADB shell "$PROP_CMD ro.product.vendor.device 'shiba'" 2>/dev/null
     $ADB shell "$PROP_CMD ro.serialno '29261JEHN$(shuf -i 1000-9999 -n 1)'" 2>/dev/null
-    echo "[anti-emu] resetprop applied"
+    # Disable ADB authentication for external connections
+    $ADB shell "$PROP_CMD ro.adb.secure 0" 2>/dev/null
+    echo "[anti-emu] resetprop applied (including ro.adb.secure=0)"
 elif $HAS_ADB_ROOT; then
     # No Magisk/resetprop — edit build.prop directly (requires remount)
     echo "[anti-emu] Using adb root + build.prop edit..."

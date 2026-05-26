@@ -155,23 +155,28 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
     fi
 ) &
 
-# --- Launch emulator (foreground, PID 1 via exec) ---
-# Suppress noisy warnings that cannot be disabled via flags:
-# - cannnot unmap ptr: QEMU memory protection (harmless)
-# - libX11: not needed in headless mode
-# - Basic token auth: gRPC auth mode info
-# - fallback path: emulator discovery dir
-# - Overwriting existing: emulator pid file
-# - Netsim Wifi: netsim disconnects (harmless)
-# - character device modem: IPv6 modem resolution (harmless with -no-sim)
+# --- Launch emulator (child process, restartable for Magisk rootAVD cold boot) ---
 echo "[emu] Starting emulator..."
-exec emulator $EMU_FLAGS 2> >(grep -v \
-    -e "cannnot unmap ptr" \
-    -e "Could not open libX11" \
-    -e "Basic token auth" \
-    -e "Using fallback path" \
-    -e "Overwriting existing" \
-    -e "Netsim Wifi.*CANCELLED" \
-    -e "character device modem" \
-    -e "ACTION REQUIRED" \
-    >&2)
+while true; do
+    emulator $EMU_FLAGS 2> >(grep -v \
+        -e "cannnot unmap ptr" \
+        -e "Could not open libX11" \
+        -e "Basic token auth" \
+        -e "Using fallback path" \
+        -e "Overwriting existing" \
+        -e "Netsim Wifi.*CANCELLED" \
+        -e "character device modem" \
+        -e "ACTION REQUIRED" \
+        >&2)
+    EXIT_CODE=$?
+    # If a restart marker exists (set by magisk-first-boot.sh), restart the emulator
+    if [ -f /tmp/.emu_restart ]; then
+        rm -f /tmp/.emu_restart
+        rm -f "$ANDROID_AVD_HOME/android.avd/"*.lock 2>/dev/null
+        echo "[emu] Restarting emulator (Magisk cold boot)..."
+        sleep 2
+        continue
+    fi
+    echo "[emu] Emulator exited with code $EXIT_CODE"
+    break
+done

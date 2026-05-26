@@ -75,35 +75,23 @@ RCEOF
     touch "$MARKER"
 
     echo "[magisk] === Restarting emulator with patched ramdisk ==="
+    # Signal start-emulator.sh to restart the emulator after it exits
+    touch /tmp/.emu_restart
     $ADB emu kill 2>/dev/null || true
     sleep 3
 
-    # Wait for emulator process to actually die (prevents "multiple emulators" FATAL error)
+    # Wait for emulator process to actually die
     echo "[magisk] Waiting for emulator process to exit..."
     for i in $(seq 1 30); do
         if ! pgrep -f "qemu-system" > /dev/null 2>&1; then
             echo "[magisk] Emulator process exited"
             break
         fi
-        [ $i -eq 15 ] && pkill -f "qemu-system" 2>/dev/null  # force kill after 15s
+        [ $i -eq 15 ] && pkill -f "qemu-system" 2>/dev/null
         sleep 1
     done
-    sleep 2
-
-    AVD_NAME=$(ls /home/androidusr/.android/avd/*.ini 2>/dev/null | head -1 | xargs basename | sed 's/.ini$//')
-    if [ -z "$AVD_NAME" ]; then
-        echo "[magisk] ERROR: No AVD found in /home/androidusr/.android/avd/"
-        exit 1
-    fi
-    echo "[magisk] Starting: $AVD_NAME (no wipe)"
-    # Match the flags used by docker-android's emulator.py for headless vs GUI mode
-    if [ "${EMULATOR_HEADLESS,,}" = "true" ]; then
-        echo "[magisk] Using headless mode (-no-audio -no-window)"
-        emulator @"$AVD_NAME" -no-audio -no-window -accel on -writable-system -verbose -no-snapshot &
-    else
-        emulator @"$AVD_NAME" -gpu swiftshader_indirect -accel on -writable-system -verbose -no-snapshot &
-    fi
-    sleep 15
+    sleep 5
+    # Emulator will be restarted by start-emulator.sh's while loop
 fi
 
 # ============================================================
@@ -358,10 +346,11 @@ if ! $SU_GRANTED; then
     timeout 5 $ADB shell "su 0 -c '/data/local/tmp/setup-auto-root.sh'" 2>/dev/null || true
     sleep 2
 
-    # Reboot
+    # Reboot via restart mechanism
     echo "[magisk] Rebooting for auto-root script execution..."
-    $ADB reboot 2>/dev/null || true
-    sleep 15
+    touch /tmp/.emu_restart
+    $ADB emu kill 2>/dev/null || true
+    sleep 10
     wait_for_boot
     sleep 10
 
