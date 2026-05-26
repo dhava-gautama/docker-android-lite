@@ -98,8 +98,6 @@ EMU_FLAGS="$EMU_FLAGS -prop qemu.adb.secure=0"
 EMU_FLAGS="$EMU_FLAGS -no-sim"
 # Suppress metrics warning banner
 EMU_FLAGS="$EMU_FLAGS -no-metrics"
-# Disable gRPC (suppresses jwt token + android-studio auth warnings)
-EMU_FLAGS="$EMU_FLAGS -no-grpc"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
     EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"
@@ -153,45 +151,32 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                     adb shell pm disable-user "$pkg" 2>/dev/null
                 done
 
-                # --- Disable + kill unnecessary processes ---
-                # Use adb root if available (google_apis images)
-                adb root 2>/dev/null; sleep 2
-                IS_ROOT=$(adb shell id 2>/dev/null | grep -c "uid=0")
-
-                # Packages safe to disable in headless mode
-                KILL_PKGS="com.android.systemui com.android.settings
-                    com.android.phone com.google.android.bluetooth
-                    com.google.android.settings.intelligence
-                    com.google.android.cellbroadcastreceiver
-                    com.google.android.devicelockcontroller
-                    com.google.android.partnersetup com.google.android.rkpdapp
-                    com.google.android.configupdater
-                    com.google.android.healthconnect.controller
-                    com.google.android.onetimeinitializer
-                    com.google.android.permissioncontroller
-                    com.google.android.ext.services
-                    com.android.imsserviceentitlement com.android.printspooler
-                    com.android.traceur com.android.emergency
-                    com.android.providers.calendar com.android.managedprovisioning
-                    com.android.emulator.multidisplay com.android.localtransport
-                    com.android.dynsystem com.android.keychain com.android.se
-                    com.android.externalstorage android.process.media
-                    android.process.acore com.google.android.providers.media.module"
-
-                for pkg in $KILL_PKGS; do
-                    if [ "$IS_ROOT" = "1" ]; then
-                        adb shell pm disable "$pkg" 2>/dev/null
-                    else
-                        adb shell pm disable-user "$pkg" 2>/dev/null
-                    fi
+                # --- Kill non-essential processes (safe: force-stop only, no disable) ---
+                # These are safe to force-stop: they free RAM but respawn if needed
+                for pkg in com.google.android.settings.intelligence \
+                    com.google.android.cellbroadcastreceiver \
+                    com.google.android.devicelockcontroller \
+                    com.google.android.partnersetup com.google.android.rkpdapp \
+                    com.google.android.configupdater \
+                    com.google.android.healthconnect.controller \
+                    com.google.android.onetimeinitializer \
+                    com.google.android.ext.services \
+                    com.android.imsserviceentitlement com.android.printspooler \
+                    com.android.traceur com.android.emergency \
+                    com.android.providers.calendar com.android.managedprovisioning \
+                    com.android.emulator.multidisplay com.android.localtransport \
+                    com.android.dynsystem; do
                     adb shell am force-stop "$pkg" 2>/dev/null
+                    adb shell pm disable-user "$pkg" 2>/dev/null
                 done
 
                 # Trim cached processes aggressively
                 adb shell settings put global activity_manager_constants max_cached_processes=4 2>/dev/null
                 adb shell am kill-all 2>/dev/null
                 # Drop page cache to free kernel memory
+                adb root 2>/dev/null; sleep 1
                 adb shell "echo 3 > /proc/sys/vm/drop_caches" 2>/dev/null
+                adb unroot 2>/dev/null
 
                 # Force doze mode for near-zero idle CPU
                 adb shell dumpsys deviceidle enable all 2>/dev/null
