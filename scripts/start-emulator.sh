@@ -88,8 +88,10 @@ EMU_FLAGS="$EMU_FLAGS -no-sim"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
     EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"
-    # Reduce qemu idle CPU: lower vsync rate and disable unnecessary hw
-    EMU_FLAGS="$EMU_FLAGS -no-accel-check"
+    # Disable unnecessary hardware emulation in headless mode
+    EMU_FLAGS="$EMU_FLAGS -no-camera -no-gnss"
+    EMU_FLAGS="$EMU_FLAGS -screen no-touch"
+    EMU_FLAGS="$EMU_FLAGS -skin 480x800"
 fi
 
 # Add user extra flags
@@ -118,12 +120,31 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                 adb shell settings put system accelerometer_rotation 0 2>/dev/null
                 adb shell settings put global auto_sync 0 2>/dev/null
                 adb shell settings put secure location_mode 0 2>/dev/null
+                # Shrink display buffer
+                adb shell wm size 480x800 2>/dev/null
+                adb shell wm density 160 2>/dev/null
+                # Disable Google bloat (safe — won't error on non-google images)
+                for pkg in com.google.android.gms com.google.android.gsf \
+                    com.google.android.googlequicksearchbox com.google.android.apps.wellbeing \
+                    com.google.android.as com.google.android.apps.photos \
+                    com.google.android.youtube com.google.android.apps.youtube.music \
+                    com.google.android.apps.maps com.google.android.gm \
+                    com.google.android.apps.docs com.google.android.calendar \
+                    com.google.android.apps.messaging com.google.android.dialer \
+                    com.google.android.contacts com.google.android.inputmethod.latin \
+                    com.google.android.tts com.google.android.apps.nexuslauncher \
+                    com.google.android.marvin.talkback com.google.android.apps.wallpaper \
+                    com.google.android.projection.gearhead com.android.camera2; do
+                    adb shell pm disable-user "$pkg" 2>/dev/null
+                done
                 # Force doze mode for near-zero idle CPU
                 adb shell dumpsys deviceidle enable all 2>/dev/null
                 adb shell dumpsys deviceidle force-idle 2>/dev/null
+                # Restrict background network
+                adb shell cmd netpolicy set restrict-background true 2>/dev/null
                 # Screen off
                 adb shell input keyevent KEYCODE_POWER 2>/dev/null
-                echo "[emu] Headless optimizations applied (doze + screen off)"
+                echo "[emu] Headless optimizations applied (bloat disabled + doze)"
             fi
 
             echo "[emu] Ready — ADB: adb connect <host>:5555"
