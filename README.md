@@ -5,12 +5,17 @@ Lightweight Android emulator in Docker. ~2.5 GB compressed — no bloat, just th
 ## Features
 
 - **Small**: ~2.5 GB (vs 8 GB for full-featured alternatives)
+- **Magisk root**: Automated rootAVD + auto-grant, zero interaction
+- **Anti-emulator bypass**: Pixel 8 identity spoof, Zygisk modules, TrickyStore, PlayIntegrityFork
+- **SSL interception**: mitmweb + AlwaysTrustUserCerts, WireGuard mode
+- **Frida server**: Pre-staged, ready for dynamic instrumentation
+- **Aurora Store**: Play Store alternative (install any app from Google Play)
 - **CUDA GPU support**: Hardware-accelerated rendering via NVIDIA GPUs
 - **scrcpy built-in**: View/control emulator from any machine
 - **Headless-first**: Optimized for CI/CD and automation
 - **Persistent data**: Volume mount for AVD state across restarts
 - **KVM accelerated**: Near-native performance
-- **PlayStore variants**: Google Play Store pre-installed
+- **Shared ADB keys**: Auth-free `adb connect` from any machine with the key
 - **HEALTHCHECK**: Built-in Docker health monitoring
 
 ## Quick Start
@@ -41,9 +46,9 @@ scrcpy -s <host>:5555
 | `api-35` | ~2.5 GB | Android 15, headless |
 | `api-33` | ~2.4 GB | Android 13, headless |
 | `api-30` | ~2.3 GB | Android 11, headless |
-| `api-34-playstore` | ~2.6 GB | Android 14 + Play Store |
+| `api-34-playstore` | ~2.6 GB | Android 14 + Aurora Store |
 | `api-34-cuda` | ~2.3 GB | Android 14 + NVIDIA GPU |
-| `api-34-playstore-cuda` | ~2.4 GB | Android 14 + Play Store + GPU |
+| `api-34-playstore-cuda` | ~2.4 GB | Android 14 + Aurora Store + GPU |
 | `api-34-minimal` | ~500 MB | No SDK — mount via volume |
 
 ## Usage
@@ -65,17 +70,67 @@ adb connect localhost:5555
 adb shell
 ```
 
+### Full setup (root + anti-emu + SSL interception)
+
+```bash
+docker run -d --name android \
+  --device /dev/kvm \
+  -p 5555:5555 -p 8081:8081 \
+  -e MEMORY=8192 \
+  -e CORES=4 \
+  -e ROOTED=true \
+  -e STRONGERANTIEMU=true \
+  -e SSLBYPASS=true \
+  -v android-data:/data \
+  ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
+
+# ADB: adb connect <host>:5555
+# Screen: scrcpy -s <host>:5555
+# mitmweb: http://<host>:8081 (password: mitmweb)
+```
+
+### Docker Compose
+
+```yaml
+services:
+  android:
+    image: ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
+    container_name: android-lite
+    devices:
+      - /dev/kvm
+    group_add:
+      - "993"  # KVM group ID (check: stat -c '%g' /dev/kvm)
+    ports:
+      - "5555:5555"
+      - "8081:8081"
+    environment:
+      - MEMORY=8192
+      - CORES=4
+      - HEADLESS=true
+      - ROOTED=true
+      - STRONGERANTIEMU=true
+      - SSLBYPASS=true
+    volumes:
+      - android-data:/data
+      - magisk-data:/opt/magisk
+      - antiemu-data:/opt/anti-emu
+      - ssl-data:/opt/ssl-bypass
+    restart: unless-stopped
+
+volumes:
+  android-data:
+  magisk-data:
+  antiemu-data:
+  ssl-data:
+```
+
+```bash
+docker compose up -d
+```
+
 ### With scrcpy (view screen)
 
 ```bash
-# Start emulator
-docker run -d --name android \
-  --device /dev/kvm \
-  -p 5555:5555 \
-  -v android-data:/data \
-  ghcr.io/dhava-gautama/docker-android-lite:api-34
-
-# From your machine (install scrcpy first)
 adb connect <host>:5555
 scrcpy -s <host>:5555
 ```
@@ -94,36 +149,22 @@ docker run -d --name android-gpu \
   ghcr.io/dhava-gautama/docker-android-lite:api-34-cuda
 ```
 
-### Play Store
+## ADB Keys
+
+The image ships with a shared ADB keypair in `keys/`. Copy `keys/adbkey` to `~/.android/adbkey` on your client machine for auth-free `adb connect`:
 
 ```bash
-docker run -d --name android \
-  --device /dev/kvm \
-  -p 5555:5555 \
-  -v android-data:/data \
-  ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
+# Linux/macOS
+cp keys/adbkey ~/.android/adbkey
+
+# Windows (PowerShell)
+copy keys\adbkey $env:USERPROFILE\.android\adbkey
 ```
 
-### With display (non-headless)
-
+Or generate your own and rebuild:
 ```bash
-docker run -d --name android \
-  --device /dev/kvm \
-  -p 5555:5555 \
-  -e HEADLESS=false \
-  -v android-data:/data \
-  ghcr.io/dhava-gautama/docker-android-lite:api-34
-
-# View via scrcpy
-scrcpy -s localhost:5555
-```
-
-### Docker Compose
-
-```bash
-docker compose up android       # CPU headless
-docker compose up android-gpu   # NVIDIA GPU
-docker compose up android-playstore  # Play Store
+adb keygen keys/adbkey
+docker build -t android-lite .
 ```
 
 ## Environment Variables
@@ -137,56 +178,24 @@ docker compose up android-playstore  # Play Store
 | `GPU_ACCELERATED` | `false` (`true` for CUDA) | Use host GPU |
 | `EXTRA_FLAGS` | — | Additional emulator flags |
 | `INSTALL_ANDROID_SDK` | `1` | Set to `0` for minimal image |
-| **Pro features** | | |
-| `ROOTED` | `false` | Enable Magisk root (playstore images) |
+| `ROOTED` | `false` | Magisk root via rootAVD |
 | `STRONGERANTIEMU` | `false` | Anti-emulator (Zygisk + resetprop + PIF) |
 | `SSLBYPASS` | `false` | SSL interception (mitmweb on :8081) |
 
-## Persistent Data
-
-Mount `/data` for AVD persistence:
-```bash
--v my-volume:/data
-```
-
-Without a volume, the AVD is recreated on each start.
-
 ## What's Included
 
-| Component | Included |
-|-----------|----------|
-| Android emulator + SDK | Yes |
-| ADB (port 5555) | Yes |
-| scrcpy | Yes |
-| KVM acceleration | Yes |
-| CUDA/GPU rendering | Yes (gpu tag) |
-| HEALTHCHECK | Yes |
-| Magisk root | Yes (`ROOTED=true`) |
-| Anti-emulator bypass | Yes (`STRONGERANTIEMU=true`) |
-| SSL interception (mitmweb) | Yes (`SSLBYPASS=true`) |
-| Frida server | Yes (pre-staged) |
-| Zygisk modules | Yes (Assistant, TrickyStore, PIF) |
-
-## Pro Features (built-in)
-
-All pro features from docker-android-pro are included, controlled by env vars:
-
-| Feature | Env Var | Description |
-|---------|---------|-------------|
-| **Magisk root** | `ROOTED=true` | rootAVD + auto-grant (playstore images) |
-| **Anti-emulator** | `STRONGERANTIEMU=true` | Zygisk modules + resetprop Pixel 8 spoof |
-| **SSL interception** | `SSLBYPASS=true` | mitmweb + AlwaysTrustUserCerts (port 8081) |
-| **Frida** | Pre-staged | Manual start: `adb shell su -c '/opt/anti-emu/frida-server -D &'` |
-
-```bash
-# Full stealth: root + anti-emu + SSL interception
-docker run -d --device /dev/kvm -p 5555:5555 -p 8081:8081 \
-  -e ROOTED=true -e STRONGERANTIEMU=true -e SSLBYPASS=true \
-  -v data:/data \
-  ghcr.io/dhava-gautama/docker-android-lite:api-34-playstore
-
-# mitmweb UI: http://<host>:8081 (password: mitmweb)
-```
+| Component | Details |
+|-----------|---------|
+| Android emulator + SDK | KVM-accelerated, API 30-35 |
+| ADB | Port 5555, shared keys for auth-free connect |
+| scrcpy | View/control from any machine |
+| Magisk root | rootAVD, auto-grant su, post-fs-data.d persistence |
+| Anti-emulator bypass | Pixel 8 spoof, Zygisk-Assistant, TrickyStore, PlayIntegrityFork |
+| SSL interception | mitmweb (WireGuard mode), AlwaysTrustUserCerts |
+| Frida server | Pre-staged: `adb shell su -c '/opt/anti-emu/frida-server -D &'` |
+| Aurora Store | Play Store alternative (google_apis images) |
+| CUDA/GPU rendering | NVIDIA GPU support (cuda tag) |
+| HEALTHCHECK | Built-in Docker health monitoring |
 
 ## What's NOT Included (keeps it small)
 
@@ -206,9 +215,8 @@ docker build --build-arg API_LEVEL=34 -t android-lite:api-34 .
 # GPU variant
 docker build -f Dockerfile.gpu --build-arg API_LEVEL=34 -t android-lite:api-34-cuda .
 
-# PlayStore
-docker build --build-arg API_LEVEL=34 --build-arg IMG_TYPE=google_apis_playstore \
-  -t android-lite:api-34-playstore .
+# With Aurora Store (google_apis — supports adb root)
+docker build --build-arg API_LEVEL=34 -t android-lite:api-34-playstore .
 
 # Minimal (no SDK, 500 MB)
 docker build --build-arg INSTALL_ANDROID_SDK=0 -t android-lite:minimal .
