@@ -81,8 +81,7 @@ EMU_FLAGS="$EMU_FLAGS -no-boot-anim"
 EMU_FLAGS="$EMU_FLAGS -no-snapshot"
 EMU_FLAGS="$EMU_FLAGS -skip-adb-auth"
 EMU_FLAGS="$EMU_FLAGS -ranchu"
-# Disable ADB authentication — set via qemu prop (the only supported namespace)
-# and also via adb shell after boot (see post-boot section)
+# Disable ADB authentication for external connections
 EMU_FLAGS="$EMU_FLAGS -prop qemu.adb.secure=0"
 # Disable modem simulator to suppress IPv6 resolution errors
 EMU_FLAGS="$EMU_FLAGS -no-sim"
@@ -104,10 +103,6 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
         BOOT=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
         if [ "$BOOT" = "1" ]; then
             echo "[emu] Boot completed in ${ELAPSED}s"
-
-            # Disable ADB authentication for external connections
-            adb shell setprop ro.adb.secure 0 2>/dev/null
-            adb shell setprop service.adb.tcp.port 5555 2>/dev/null
 
             # Post-boot optimizations
             adb shell settings put global window_animation_scale 0 2>/dev/null

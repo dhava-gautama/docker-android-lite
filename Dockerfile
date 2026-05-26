@@ -48,9 +48,12 @@ RUN python3 -m venv /opt/mitmproxy-venv \
 WORKDIR /opt
 EXPOSE 5554 5555 8081
 
-# Setup AVD home
+# Setup AVD home + shared ADB keys (same key on emulator + client = no auth prompt)
 RUN mkdir -p /root/.android /data \
     && touch /root/.android/repositories.cfg
+COPY keys/adbkey /root/.android/adbkey
+COPY keys/adbkey.pub /root/.android/adbkey.pub
+RUN chmod 600 /root/.android/adbkey
 
 # Install SDK
 COPY scripts/install-sdk.sh /opt/scripts/
