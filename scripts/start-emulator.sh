@@ -123,7 +123,7 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                 # Shrink display buffer
                 adb shell wm size 480x800 2>/dev/null
                 adb shell wm density 160 2>/dev/null
-                # Disable Google bloat (safe — won't error on non-google images)
+                # --- Disable + force-stop Google bloat ---
                 for pkg in com.google.android.gms com.google.android.gsf \
                     com.google.android.googlequicksearchbox com.google.android.apps.wellbeing \
                     com.google.android.as com.google.android.apps.photos \
@@ -137,6 +137,47 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                     com.google.android.projection.gearhead com.android.camera2; do
                     adb shell pm disable-user "$pkg" 2>/dev/null
                 done
+
+                # --- Disable + kill unnecessary processes ---
+                # Use adb root if available (google_apis images)
+                adb root 2>/dev/null; sleep 2
+                IS_ROOT=$(adb shell id 2>/dev/null | grep -c "uid=0")
+
+                # Packages safe to disable in headless mode
+                KILL_PKGS="com.android.systemui com.android.settings
+                    com.android.phone com.google.android.bluetooth
+                    com.google.android.settings.intelligence
+                    com.google.android.cellbroadcastreceiver
+                    com.google.android.devicelockcontroller
+                    com.google.android.partnersetup com.google.android.rkpdapp
+                    com.google.android.configupdater
+                    com.google.android.healthconnect.controller
+                    com.google.android.onetimeinitializer
+                    com.google.android.permissioncontroller
+                    com.google.android.ext.services
+                    com.android.imsserviceentitlement com.android.printspooler
+                    com.android.traceur com.android.emergency
+                    com.android.providers.calendar com.android.managedprovisioning
+                    com.android.emulator.multidisplay com.android.localtransport
+                    com.android.dynsystem com.android.keychain com.android.se
+                    com.android.externalstorage android.process.media
+                    android.process.acore com.google.android.providers.media.module"
+
+                for pkg in $KILL_PKGS; do
+                    if [ "$IS_ROOT" = "1" ]; then
+                        adb shell pm disable "$pkg" 2>/dev/null
+                    else
+                        adb shell pm disable-user "$pkg" 2>/dev/null
+                    fi
+                    adb shell am force-stop "$pkg" 2>/dev/null
+                done
+
+                # Trim cached processes aggressively
+                adb shell settings put global activity_manager_constants max_cached_processes=4 2>/dev/null
+                adb shell am kill-all 2>/dev/null
+                # Drop page cache to free kernel memory
+                adb shell "echo 3 > /proc/sys/vm/drop_caches" 2>/dev/null
+
                 # Force doze mode for near-zero idle CPU
                 adb shell dumpsys deviceidle enable all 2>/dev/null
                 adb shell dumpsys deviceidle force-idle 2>/dev/null
@@ -144,7 +185,7 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                 adb shell cmd netpolicy set restrict-background true 2>/dev/null
                 # Screen off
                 adb shell input keyevent KEYCODE_POWER 2>/dev/null
-                echo "[emu] Headless optimizations applied (bloat disabled + doze)"
+                echo "[emu] Headless optimizations applied (bloat killed + doze)"
             fi
 
             echo "[emu] Ready — ADB: adb connect <host>:5555"
