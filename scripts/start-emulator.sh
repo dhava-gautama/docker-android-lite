@@ -43,11 +43,18 @@ export ADB_USB=0
 export ADB_MDNS_AUTO_CONNECT=0
 adb -a -P 5037 server nodaemon 2>&1 | grep -v "Netlink: SUBSYSTEM" &
 
-# --- socat port forwarding: container IP → localhost ---
+# --- socat port forwarding: container IP → localhost (delayed until emulator binds) ---
 LOCAL_IP=$(ip addr list eth0 2>/dev/null | grep "inet " | cut -d' ' -f6 | cut -d/ -f1)
 if [ -n "$LOCAL_IP" ]; then
-    socat tcp-listen:"$EMULATOR_CONSOLE_PORT",bind="$LOCAL_IP",fork tcp:127.0.0.1:"$EMULATOR_CONSOLE_PORT" &
-    socat tcp-listen:"$ADB_PORT",bind="$LOCAL_IP",fork tcp:127.0.0.1:"$ADB_PORT" &
+    (
+        # Wait for emulator to bind ports before forwarding
+        for i in $(seq 1 30); do
+            ss -tln 2>/dev/null | grep -q ":$ADB_PORT " && break
+            sleep 1
+        done
+        socat tcp-listen:"$EMULATOR_CONSOLE_PORT",bind="$LOCAL_IP",fork tcp:127.0.0.1:"$EMULATOR_CONSOLE_PORT" &
+        socat tcp-listen:"$ADB_PORT",bind="$LOCAL_IP",fork tcp:127.0.0.1:"$ADB_PORT" &
+    ) &
 fi
 
 # --- Suppress emulator warnings ---
@@ -56,6 +63,10 @@ mkdir -p /root/.android
 touch /root/.android/emu-update-last-check.ini
 # Create avd running dir to suppress "Using fallback path" warning
 mkdir -p /root/.android/avd/running
+# Create discovery dir used by emulator registration (suppresses fallback warning)
+DISCOVERY_DIR="${ANDROID_SDK_ROOT}/emulator/discovery"
+mkdir -p "$DISCOVERY_DIR"
+export ANDROID_EMULATOR_DISCOVERY_DIR="$DISCOVERY_DIR"
 
 # --- Clean stale locks from crashed runs ---
 rm -f "$ANDROID_AVD_HOME/android.avd/"*.lock 2>/dev/null
@@ -85,6 +96,10 @@ EMU_FLAGS="$EMU_FLAGS -ranchu"
 EMU_FLAGS="$EMU_FLAGS -prop qemu.adb.secure=0"
 # Disable modem simulator to suppress IPv6 resolution errors
 EMU_FLAGS="$EMU_FLAGS -no-sim"
+# Suppress metrics warning banner
+EMU_FLAGS="$EMU_FLAGS -no-metrics"
+# Disable gRPC (suppresses jwt token + android-studio auth warnings)
+EMU_FLAGS="$EMU_FLAGS -no-grpc"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
     EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"

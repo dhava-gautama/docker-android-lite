@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget unzip socat iproute2 openssl xz-utils git lzip \
         libdrm2 libgbm1 libasound2t64 libnss3 \
         libxkbcommon0 libxshmfence1 libpulse0 \
-        libdbus-glib-1-2 libxcursor1 \
+        libdbus-glib-1-2 libxcursor1 libx11-6 libx11-xcb1 \
         xvfb scrcpy \
     && rm -rf /var/lib/apt/lists/*
 
