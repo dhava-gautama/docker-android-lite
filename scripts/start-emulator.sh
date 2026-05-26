@@ -153,16 +153,7 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
 # --- Launch emulator (child process, restartable for Magisk rootAVD cold boot) ---
 echo "[emu] Starting emulator..."
 while true; do
-    emulator $EMU_FLAGS 2> >(grep -v \
-        -e "cannnot unmap ptr" \
-        -e "Could not open libX11" \
-        -e "Basic token auth" \
-        -e "Using fallback path" \
-        -e "Overwriting existing" \
-        -e "Netsim Wifi.*CANCELLED" \
-        -e "character device modem" \
-        -e "ACTION REQUIRED" \
-        >&2)
+    emulator $EMU_FLAGS
     EXIT_CODE=$?
     # If a restart marker exists (set by magisk-first-boot.sh), restart the emulator
     if [ -f /tmp/.emu_restart ]; then
