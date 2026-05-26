@@ -172,6 +172,9 @@ for i in $(seq 1 20); do
     sleep 3
 done
 
+# Re-apply ro.adb.secure=0 (resetprop doesn't survive reboots)
+$ADB shell "su 0 -c 'resetprop ro.adb.secure 0'" 2>/dev/null
+
 # ============================================================
 # Layer 3: WireGuard VPN tunnel (replaces HTTP proxy + iptables)
 # ============================================================

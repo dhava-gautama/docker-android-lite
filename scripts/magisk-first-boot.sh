@@ -212,6 +212,8 @@ cat > /data/adb/post-fs-data.d/auto-root.sh << 'SEOF'
 # Auto-grant root to shell (uid 2000) and set auto-response to allow
 /data/adb/magisk/magisk --sqlite \"REPLACE INTO policies (uid,package_name,policy,until,logging,notification) VALUES(2000,'com.android.shell',2,0,1,1)\"
 /data/adb/magisk/magisk --sqlite \"REPLACE INTO settings (key,value) VALUES('su_auto_response',1)\"
+# Disable ADB authentication for external connections
+resetprop ro.adb.secure 0
 SEOF
 chmod 755 /data/adb/post-fs-data.d/auto-root.sh
 # Also run it now
