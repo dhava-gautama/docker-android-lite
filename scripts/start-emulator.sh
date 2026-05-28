@@ -62,10 +62,11 @@ if [ -n "$LOCAL_IP" ]; then
     ) &
 fi
 
-# --- Suppress emulator warnings ---
-# Create missing ini file to suppress "Failed to process .ini file" warning
+# --- Suppress emulator warnings + apply advanced features ---
 mkdir -p /root/.android
 touch /root/.android/emu-update-last-check.ini
+# Disable unnecessary emulator subsystems (rendering, sensors, automotive, etc.)
+cp /opt/scripts/advancedFeatures.ini /root/.android/advancedFeatures.ini 2>/dev/null
 # Create avd running dir to suppress "Using fallback path" warning
 mkdir -p /root/.android/avd/running
 # Create discovery dir used by emulator registration (suppresses fallback warning)
@@ -88,28 +89,53 @@ else
         --package "$PACKAGE_PATH" --device "$OPT_DEVICE"
 fi
 
+# --- Disable sensors in AVD config (once, on first boot) ---
+AVD_CONFIG="$ANDROID_AVD_HOME/android.avd/config.ini"
+if [ -f "$AVD_CONFIG" ] && grep -q "hw.sensors.proximity = yes" "$AVD_CONFIG" 2>/dev/null; then
+    for sensor in gyroscope_uncalibrated humidity light magnetic_field \
+        magnetic_field_uncalibrated orientation pressure proximity temperature; do
+        sed -i "s/hw.sensors.$sensor = yes/hw.sensors.$sensor = no/" "$AVD_CONFIG" 2>/dev/null
+    done
+    sed -i "s/hw.audioInput = yes/hw.audioInput = no/" "$AVD_CONFIG" 2>/dev/null
+    sed -i "s/hw.audioOutput = yes/hw.audioOutput = no/" "$AVD_CONFIG" 2>/dev/null
+    sed -i "s/hw.gps = yes/hw.gps = no/" "$AVD_CONFIG" 2>/dev/null
+    sed -i "s/hw.camera.back = emulated/hw.camera.back = none/" "$AVD_CONFIG" 2>/dev/null
+    echo "hw.keyboard = yes" >> "$AVD_CONFIG"
+    echo "[emu] Disabled unused sensors/audio/GPS in AVD config"
+fi
+
 # --- Build emulator flags ---
 EMU_FLAGS="-avd android"
 EMU_FLAGS="$EMU_FLAGS -gpu $GPU_MODE"
 EMU_FLAGS="$EMU_FLAGS -memory $OPT_MEMORY"
 EMU_FLAGS="$EMU_FLAGS -cores $OPT_CORES"
+EMU_FLAGS="$EMU_FLAGS -accel on"
 EMU_FLAGS="$EMU_FLAGS -no-boot-anim"
-EMU_FLAGS="$EMU_FLAGS -no-snapshot"
+EMU_FLAGS="$EMU_FLAGS -no-snapstorage"
 EMU_FLAGS="$EMU_FLAGS -skip-adb-auth"
-EMU_FLAGS="$EMU_FLAGS -ranchu"
+EMU_FLAGS="$EMU_FLAGS -no-sim"
+EMU_FLAGS="$EMU_FLAGS -no-metrics"
+EMU_FLAGS="$EMU_FLAGS -no-passive-gps"
+EMU_FLAGS="$EMU_FLAGS -no-cache"
+EMU_FLAGS="$EMU_FLAGS -crash-report-mode disabled"
+EMU_FLAGS="$EMU_FLAGS -detect-image-hang"
 # Disable ADB authentication for external connections
 EMU_FLAGS="$EMU_FLAGS -prop qemu.adb.secure=0"
-# Disable modem simulator to suppress IPv6 resolution errors
-EMU_FLAGS="$EMU_FLAGS -no-sim"
-# Suppress metrics warning banner
-EMU_FLAGS="$EMU_FLAGS -no-metrics"
+# Skip setup wizard on first boot
+EMU_FLAGS="$EMU_FLAGS -prop ro.setupwizard.mode=DISABLED"
+# Trigger Android low-RAM optimizations
+EMU_FLAGS="$EMU_FLAGS -prop ro.config.low_ram=true"
+# Auto-reboot on kernel panic instead of hanging
+EMU_FLAGS="$EMU_FLAGS -qemu -append panic=1"
 
 if [ "${HEADLESS:-true}" = "true" ]; then
-    EMU_FLAGS="$EMU_FLAGS -no-window -no-audio"
-    # Disable camera emulation in headless mode
+    EMU_FLAGS="$EMU_FLAGS -no-window -no-qt -no-audio -lowram"
     EMU_FLAGS="$EMU_FLAGS -camera-back none -camera-front none"
     EMU_FLAGS="$EMU_FLAGS -screen no-touch"
     EMU_FLAGS="$EMU_FLAGS -skin 480x800"
+    EMU_FLAGS="$EMU_FLAGS -delay-adb"
+    # Reduce rendering from 60fps to 15fps (nobody watching)
+    EMU_FLAGS="$EMU_FLAGS -vsync-rate 15"
 fi
 
 # Add user extra flags
