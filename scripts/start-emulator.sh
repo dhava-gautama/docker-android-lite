@@ -6,7 +6,11 @@
 # Minimal Android emulator with direct exec (no supervisord)
 # ============================================================
 
+# --- JSON state logging (machine-parseable for orchestration) ---
+emit_state() { echo "{\"type\":\"state-update\",\"value\":\"$1\"}"; }
+
 export USER=root
+export ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL=${ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL:-10}
 
 OPT_MEMORY=${MEMORY:-4096}
 OPT_CORES=${CORES:-2}
@@ -29,6 +33,7 @@ else
     export GPU_MODE="swiftshader_indirect"
 fi
 
+emit_state "ANDROID_STARTING"
 echo "============================================"
 echo " docker-android-lite"
 echo " API: $API_LEVEL | Device: $OPT_DEVICE"
@@ -112,6 +117,7 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
 
 # --- Wait for boot in background ---
 (
+    emit_state "ANDROID_BOOTING"
     adb wait-for-device
     echo "[emu] Device connected, waiting for boot..."
     BOOT_TIMEOUT=300
@@ -125,6 +131,11 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
             adb shell settings put global window_animation_scale 0 2>/dev/null
             adb shell settings put global transition_animation_scale 0 2>/dev/null
             adb shell settings put global animator_duration_scale 0 2>/dev/null
+
+            # Allow access to hidden/private Android APIs (useful for testing/pentesting)
+            if [ "${DISABLE_HIDDEN_POLICY:-true}" = "true" ]; then
+                adb shell "settings put global hidden_api_policy_pre_p_apps 1;settings put global hidden_api_policy_p_apps 1;settings put global hidden_api_policy 1" 2>/dev/null
+            fi
 
             if [ "${HEADLESS:-true}" = "true" ]; then
                 # Keep device awake for ADB (screen dims but doesn't sleep)
@@ -153,7 +164,6 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                 done
 
                 # --- Kill non-essential processes (safe: force-stop only, no disable) ---
-                # These are safe to force-stop: they free RAM but respawn if needed
                 for pkg in com.google.android.settings.intelligence \
                     com.google.android.cellbroadcastreceiver \
                     com.google.android.devicelockcontroller \
@@ -186,6 +196,7 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
                 echo "[emu] Headless optimizations applied"
             fi
 
+            emit_state "ANDROID_READY"
             echo "[emu] Ready — ADB: adb connect <host>:5555"
             echo "[emu] Ready — scrcpy: scrcpy -s <host>:5555"
 
@@ -216,6 +227,7 @@ EMU_FLAGS="$EMU_FLAGS $EXTRA_FLAGS"
         ELAPSED=$((ELAPSED + 5))
     done
     if [ $ELAPSED -ge $BOOT_TIMEOUT ]; then
+        emit_state "ANDROID_BOOT_TIMEOUT"
         echo "[emu] WARNING: Boot did not complete within ${BOOT_TIMEOUT}s"
     fi
 ) &
@@ -233,6 +245,7 @@ while true; do
         sleep 2
         continue
     fi
+    emit_state "ANDROID_STOPPED"
     echo "[emu] Emulator exited with code $EXIT_CODE"
     break
 done

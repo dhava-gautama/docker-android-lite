@@ -24,7 +24,9 @@ ENV ANDROID_SDK_ROOT=/opt/android \
 # Pro feature flags
 ENV ROOTED=false \
     STRONGERANTIEMU=false \
-    SSLBYPASS=false
+    SSLBYPASS=false \
+    DISABLE_HIDDEN_POLICY=true \
+    ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL=10
 
 ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/emulator:${ANDROID_SDK_ROOT}/cmdline-tools/tools/bin"
 ENV LD_LIBRARY_PATH="$ANDROID_SDK_ROOT/emulator/lib64:$ANDROID_SDK_ROOT/emulator/lib64/qt/lib"
