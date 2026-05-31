@@ -26,7 +26,8 @@ ENV ROOTED=false \
     STRONGERANTIEMU=false \
     SSLBYPASS=false \
     DISABLE_HIDDEN_POLICY=true \
-    ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL=10
+    ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL=10 \
+    EMULATOR_COUNT=1
 
 ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/emulator:${ANDROID_SDK_ROOT}/cmdline-tools/tools/bin"
 ENV LD_LIBRARY_PATH="$ANDROID_SDK_ROOT/emulator/lib64:$ANDROID_SDK_ROOT/emulator/lib64/qt/lib"
@@ -48,7 +49,8 @@ RUN python3 -m venv /opt/mitmproxy-venv \
     && ln -sf /opt/mitmproxy-venv/bin/mitmdump /usr/local/bin/mitmdump
 
 WORKDIR /opt
-EXPOSE 5554 5555 8081
+# Ports: console/ADB pairs (5554/5555, 5556/5557, ...) + mitmweb
+EXPOSE 5554-5585 8081
 
 # Setup AVD home + shared ADB keys (same key on emulator + client = no auth prompt)
 RUN mkdir -p /root/.android /data \
