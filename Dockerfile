@@ -79,10 +79,16 @@ RUN wget -q -L "https://github.com/snake-4/Zygisk-Assistant/releases/download/v2
     && wget -q -L "https://github.com/osm0sis/PlayIntegrityFork/releases/download/v16/PlayIntegrityFork-v16.zip" \
         -O /opt/anti-emu/PlayIntegrityFork.zip
 
-# Stage SSL bypass modules
-RUN mkdir -p /opt/ssl-bypass \
+# Stage SSL bypass modules (4-layer stealth stack)
+RUN mkdir -p /opt/ssl-bypass /opt/ssl-bypass/frida-unpinning \
     && wget -q -L "https://github.com/NVISOsecurity/AlwaysTrustUserCerts/releases/download/v1.3/AlwaysTrustUserCerts_v1.3.zip" \
-        -O /opt/ssl-bypass/AlwaysTrustUserCerts.zip
+        -O /opt/ssl-bypass/AlwaysTrustUserCerts.zip \
+    && wget -q -L "https://github.com/lico-n/ZygiskFrida/releases/latest/download/ZygiskFrida-release.zip" \
+        -O /opt/ssl-bypass/ZygiskFrida.zip \
+    && wget -q -L "https://raw.githubusercontent.com/httptoolkit/frida-interception-and-unpinning/main/frida-script.js" \
+        -O /opt/ssl-bypass/frida-unpinning/frida-script.js \
+    && wget -q -L "https://raw.githubusercontent.com/httptoolkit/frida-interception-and-unpinning/main/config.js" \
+        -O /opt/ssl-bypass/frida-unpinning/config.js 2>/dev/null || true
 
 # Install rootAVD (for Magisk on playstore images)
 RUN git clone --depth 1 https://gitlab.com/newbit/rootAVD.git /opt/magisk/rootAVD \

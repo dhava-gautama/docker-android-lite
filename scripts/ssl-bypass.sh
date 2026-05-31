@@ -1,9 +1,10 @@
 #!/bin/bash
-# ssl-bypass.sh - Stealth SSL interception with in-container mitmproxy
-# Layer 1: AlwaysTrustUserCerts (user CA → system cert store)
-# Layer 2: ZygiskSSLUnpinning (if x86_64 supported)
-# Layer 3: iptables transparent redirect → mitmproxy
-# mitmweb UI on port 8081, no password required
+# ssl-bypass.sh - 4-layer stealth SSL interception
+#
+# Layer 1: AlwaysTrustUserCerts (user CA → system cert store via Magisk)
+# Layer 2: iptables transparent redirect (kernel-level, invisible to apps)
+# Layer 3: ZygiskFrida + httptoolkit unpinning scripts (stealthiest Frida)
+# Layer 4: mitmweb UI on port 8081
 #
 # Controlled by SSLBYPASS=true/false
 
@@ -30,26 +31,18 @@ start_mitmweb() {
         return 1
     fi
 
-    # Generate argon2 hash for password "mitmweb"
     WEB_PASS_HASH=$(/opt/mitmproxy-venv/bin/python3 -c "
 from argon2 import PasswordHasher
 print(PasswordHasher().hash('mitmweb'))
 " 2>/dev/null)
 
-    # WireGuard mode: emulator connects via WireGuard VPN
-    # - No proxy settings visible to apps (stealthier than HTTP proxy)
-    # - Captures ALL traffic (TCP + UDP), not just HTTP
-    # - WireGuard config generated at $MITM_HOME/wireguard-client.conf
-    # - Install WireGuard app on emulator, import config via ADB
-    echo "[ssl] Starting mitmweb in WireGuard mode..."
+    echo "[ssl] Starting mitmweb in transparent mode..."
     echo "[ssl]   Web UI: http://<host>:8081 (password: mitmweb)"
-    echo "[ssl]   WireGuard port: 51820/udp (internal)"
-    echo "[ssl]   Config: $MITM_HOME/wireguard-client.conf"
 
-    # Run in FOREGROUND
     exec mitmweb \
-        --mode wireguard \
+        --mode transparent \
         --web-host 0.0.0.0 --web-port 8081 \
+        --listen-port 8080 \
         --set confdir="$MITM_HOME" \
         --set block_global=false \
         --set ssl_insecure=true \
@@ -58,27 +51,64 @@ print(PasswordHasher().hash('mitmweb'))
         -w "$TRAFFIC_DIR/traffic_$(date +%Y%m%d_%H%M%S).flow"
 }
 
+setup_iptables() {
+    # Redirect all outgoing HTTPS/HTTP from emulator through mitmproxy
+    # 10.0.2.2 = emulator's gateway (host machine)
+    # Using a dedicated chain to avoid conflicts
+    echo "[ssl] Setting up iptables transparent redirect..."
+    $ADB shell "su 0 -c '
+        iptables -t nat -N MITMPROXY 2>/dev/null
+        iptables -t nat -F MITMPROXY
+        iptables -t nat -A MITMPROXY -o lo -j RETURN
+        iptables -t nat -A MITMPROXY -d 10.0.2.0/24 -j RETURN
+        iptables -t nat -A MITMPROXY -p tcp --dport 443 -j DNAT --to-destination 10.0.2.2:8080
+        iptables -t nat -A MITMPROXY -p tcp --dport 80 -j DNAT --to-destination 10.0.2.2:8080
+        iptables -t nat -A OUTPUT -j MITMPROXY
+    '" 2>/dev/null && echo "[ssl] iptables redirect: ACTIVE" || echo "[ssl] iptables redirect: FAILED"
+
+    # Make persistent across reboots via post-fs-data.d script
+    $ADB shell "su 0 -c 'mkdir -p /data/adb/service.d && cat > /data/adb/service.d/ssl-redirect.sh << \"SEOF\"
+#!/system/bin/sh
+sleep 30
+iptables -t nat -N MITMPROXY 2>/dev/null
+iptables -t nat -F MITMPROXY
+iptables -t nat -A MITMPROXY -o lo -j RETURN
+iptables -t nat -A MITMPROXY -d 10.0.2.0/24 -j RETURN
+iptables -t nat -A MITMPROXY -p tcp --dport 443 -j DNAT --to-destination 10.0.2.2:8080
+iptables -t nat -A MITMPROXY -p tcp --dport 80 -j DNAT --to-destination 10.0.2.2:8080
+iptables -t nat -A OUTPUT -j MITMPROXY
+SEOF
+chmod 755 /data/adb/service.d/ssl-redirect.sh'" 2>/dev/null
+}
+
+# ============================================================
 # Check SSLBYPASS env var
+# ============================================================
 if [ "${SSLBYPASS,,}" != "true" ]; then
     echo "[ssl] SSLBYPASS=${SSLBYPASS:-false}, skipping."
     exit 0
 fi
 
-# If already installed, just start mitmweb (foreground, keeps running)
+# Already installed — just set up iptables + start mitmweb
 if [ -f "$MARKER" ]; then
     echo "[ssl] Modules already installed."
     wait_for_boot
     sleep 5
-
-    start_mitmweb  # blocks forever (exec)
+    # Re-apply iptables (lost on reboot if service.d didn't run yet)
+    for i in $(seq 1 20); do
+        $ADB shell "su 0 -c id" 2>/dev/null | grep -q "uid=0" && break
+        sleep 3
+    done
+    setup_iptables
+    start_mitmweb
     exit 0
 fi
 
 echo "[ssl] ============================================"
-echo "[ssl] Setting up stealth SSL interception"
+echo "[ssl] Setting up 4-layer stealth SSL interception"
 echo "[ssl] ============================================"
 
-# Wait for Magisk + anti-emu to complete
+# Wait for Magisk + anti-emu
 echo "[ssl] Waiting for Magisk setup..."
 for i in $(seq 1 120); do
     [ -f /tmp/.magisk_ready ] && break
@@ -98,18 +128,19 @@ sleep 5
 
 # Wait for su
 echo "[ssl] Waiting for su..."
+HAS_SU=false
 for i in $(seq 1 30); do
-    $ADB shell "su 0 -c id" 2>/dev/null | grep -q "uid=0" && break
+    $ADB shell "su 0 -c id" 2>/dev/null | grep -q "uid=0" && { HAS_SU=true; break; }
     sleep 3
 done
-if ! $ADB shell "su 0 -c id" 2>/dev/null | grep -q "uid=0"; then
-    echo "[ssl] ERROR: su not available"
-    start_mitmweb  # start anyway for manual use
+if ! $HAS_SU; then
+    echo "[ssl] WARNING: su not available — limited SSL bypass (mitmweb only)"
+    start_mitmweb
     exit 0
 fi
 echo "[ssl] su access confirmed"
 
-# Generate mitmproxy CA cert by doing a quick start/stop
+# Generate mitmproxy CA cert
 echo "[ssl] Generating mitmproxy CA cert..."
 mkdir -p "$MITM_HOME" "$TRAFFIC_DIR"
 if command -v mitmdump > /dev/null 2>&1; then
@@ -120,7 +151,9 @@ fi
 # ============================================================
 # Layer 1: AlwaysTrustUserCerts + CA cert
 # ============================================================
-echo "[ssl] === Layer 1: AlwaysTrustUserCerts ==="
+echo "[ssl] === Layer 1: System CA trust ==="
+
+$ADB shell "su 0 -c 'magisk --sqlite \"REPLACE INTO settings (key,value) VALUES(\\\"zygisk\\\",1)\"'" 2>/dev/null
 
 if [ -f "$SSL_DIR/AlwaysTrustUserCerts.zip" ]; then
     $ADB push "$SSL_DIR/AlwaysTrustUserCerts.zip" /data/local/tmp/ 2>/dev/null
@@ -130,7 +163,6 @@ if [ -f "$SSL_DIR/AlwaysTrustUserCerts.zip" ]; then
 fi
 
 if [ -f "$MITM_HOME/mitmproxy-ca-cert.pem" ]; then
-    echo "[ssl] Installing mitmproxy CA cert..."
     HASH=$(openssl x509 -inform PEM -subject_hash_old -in "$MITM_HOME/mitmproxy-ca-cert.pem" 2>/dev/null | head -1)
     if [ -n "$HASH" ]; then
         cp "$MITM_HOME/mitmproxy-ca-cert.pem" "/tmp/${HASH}.0"
@@ -140,26 +172,34 @@ if [ -f "$MITM_HOME/mitmproxy-ca-cert.pem" ]; then
             echo "[ssl] CA cert install failed"
         rm -f "/tmp/${HASH}.0"
     fi
-else
-    echo "[ssl] CA cert not generated yet"
 fi
 
 # ============================================================
-# Layer 2: ZygiskSSLUnpinning (skip if ARM-only)
+# Layer 2: iptables transparent redirect (kernel-level)
 # ============================================================
-echo "[ssl] === Layer 2: SSL Unpinning ==="
-$ADB shell "su 0 -c 'magisk --sqlite \"REPLACE INTO settings (key,value) VALUES(\\\"zygisk\\\",1)\"'" 2>/dev/null
+echo "[ssl] === Layer 2: iptables transparent redirect ==="
+# Will be applied after reboot (service.d script)
 
-if [ -f "$SSL_DIR/ZygiskSSLUnpinning.zip" ] && unzip -l "$SSL_DIR/ZygiskSSLUnpinning.zip" 2>/dev/null | grep -q "x86_64"; then
-    $ADB push "$SSL_DIR/ZygiskSSLUnpinning.zip" /data/local/tmp/ 2>/dev/null
-    $ADB shell "su 0 -c 'magisk --install-module /data/local/tmp/ZygiskSSLUnpinning.zip'" 2>/dev/null && \
-        echo "[ssl] ZygiskSSLUnpinning: installed" || \
-        echo "[ssl] ZygiskSSLUnpinning: install failed"
-else
-    echo "[ssl] ZygiskSSLUnpinning: skipped (ARM-only)"
+# ============================================================
+# Layer 3: ZygiskFrida + unpinning scripts (stealthiest)
+# ============================================================
+echo "[ssl] === Layer 3: ZygiskFrida + SSL unpinning ==="
+
+if [ -f "$SSL_DIR/ZygiskFrida.zip" ]; then
+    $ADB push "$SSL_DIR/ZygiskFrida.zip" /data/local/tmp/ 2>/dev/null
+    $ADB shell "su 0 -c 'magisk --install-module /data/local/tmp/ZygiskFrida.zip'" 2>/dev/null && \
+        echo "[ssl] ZygiskFrida: installed (stealthiest Frida delivery)" || \
+        echo "[ssl] ZygiskFrida: install failed"
 fi
 
-# Reboot to activate modules
+# Stage httptoolkit unpinning script for ZygiskFrida
+if [ -d "$SSL_DIR/frida-unpinning" ]; then
+    $ADB push "$SSL_DIR/frida-unpinning/frida-script.js" /data/local/tmp/ssl-unpin.js 2>/dev/null
+    $ADB shell "su 0 -c 'mkdir -p /data/local/tmp/zygisk-frida && cp /data/local/tmp/ssl-unpin.js /data/local/tmp/zygisk-frida/config.js'" 2>/dev/null
+    echo "[ssl] httptoolkit unpinning script: staged for ZygiskFrida"
+fi
+
+# Reboot to activate all modules
 echo "[ssl] Rebooting to activate modules..."
 $ADB reboot 2>/dev/null
 sleep 15
@@ -172,41 +212,27 @@ for i in $(seq 1 20); do
     sleep 3
 done
 
-# Re-apply ro.adb.secure=0 (resetprop doesn't survive reboots)
+# Re-apply ro.adb.secure=0
 $ADB shell "su 0 -c 'resetprop ro.adb.secure 0'" 2>/dev/null
 
-# ============================================================
-# Layer 3: WireGuard VPN tunnel (replaces HTTP proxy + iptables)
-# ============================================================
-# WireGuard mode: ALL traffic goes through VPN tunnel to mitmproxy
-# - No proxy settings visible to apps (stealthier)
-# - Captures TCP + UDP (not just HTTP)
-# - mitmweb generates WireGuard config, we install WireGuard app + import config
-echo "[ssl] === Layer 3: WireGuard VPN tunnel ==="
-
-# Install WireGuard app from Play Store or F-Droid
-echo "[ssl] Installing WireGuard app..."
-$ADB shell "su 0 -c 'pm install-existing com.wireguard.android'" 2>/dev/null || \
-    $ADB shell "am start -a android.intent.action.VIEW -d 'market://details?id=com.wireguard.android'" 2>/dev/null || true
-
-# The WireGuard client config will be generated when mitmweb starts
-# and placed at $MITM_HOME/wireguard-client.conf
-# We'll push it to the emulator after mitmweb starts
+# Apply iptables redirect
+setup_iptables
 
 # ============================================================
-# Mark as installed + start mitmweb (foreground, keeps running)
+# Done — start mitmweb
 # ============================================================
 touch "$MARKER"
 
 echo "[ssl] === Verification ==="
-$ADB shell "su 0 -c 'ls /data/adb/modules/'" 2>/dev/null | grep -qi trust && echo "[ssl] AlwaysTrustUserCerts: ACTIVE"
+$ADB shell "su 0 -c 'ls /data/adb/modules/'" 2>/dev/null
+$ADB shell "su 0 -c 'iptables -t nat -L MITMPROXY -n'" 2>/dev/null | head -5
 
 echo "[ssl] ============================================"
-echo "[ssl] SSL interception ready!"
-echo "[ssl] mitmweb password: mitmweb"
-echo "[ssl] WireGuard config will be at: $MITM_HOME/wireguard-client.conf"
-echo "[ssl] Import it into WireGuard app on emulator after mitmweb starts"
-echo "[ssl] Starting mitmweb in WireGuard mode..."
+echo "[ssl] 4-layer SSL interception ready!"
+echo "[ssl]   Layer 1: AlwaysTrustUserCerts (system CA)"
+echo "[ssl]   Layer 2: iptables transparent redirect (kernel)"
+echo "[ssl]   Layer 3: ZygiskFrida + unpinning scripts"
+echo "[ssl]   Layer 4: mitmweb on :8081 (password: mitmweb)"
 echo "[ssl] ============================================"
 
-start_mitmweb  # exec — replaces shell, keeps supervisord happy
+start_mitmweb
