@@ -174,10 +174,23 @@ for ATTEMPT in 1 2 3; do
         sleep 30
         wait_for_boot
         sleep 15
+        # Additional Setup re-patches ramdisk — our auto-root.rc is gone.
+        # Re-run rootAVD with AddRCscripts to re-inject it.
         if ! $ADB shell ps -A 2>/dev/null | grep -q magiskd; then
-            echo "[magisk] ERROR: magiskd not running after setup."
-            exit 1
+            echo "[magisk] magiskd not running after setup — re-patching ramdisk..."
+            RAMDISK_REL=$(echo "$RAMDISK_PATH" | sed "s|^$ANDROID_HOME/||")
+            (cd /opt/magisk/rootAVD && export ANDROID_HOME && bash rootAVD.sh "$RAMDISK_REL" AddRCscripts 2>&1)
+            touch /tmp/.emu_restart
+            $ADB emu kill 2>/dev/null || true
+            sleep 10
+            wait_for_boot
+            sleep 10
+            if ! $ADB shell ps -A 2>/dev/null | grep -q magiskd; then
+                echo "[magisk] ERROR: magiskd still not running after re-patch"
+                exit 1
+            fi
         fi
+        echo "[magisk] magiskd running after Additional Setup"
         SETUP_HANDLED=true
         break
     else

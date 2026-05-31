@@ -150,20 +150,33 @@ if $HAS_MAGISK; then
     $ADB shell "$PROP_CMD ro.adb.secure 0" 2>/dev/null
     echo "[anti-emu] resetprop applied (including ro.adb.secure=0)"
 elif $HAS_ADB_ROOT; then
-    # No Magisk/resetprop — edit build.prop directly (requires remount)
+    # No Magisk/resetprop — edit build.prop directly (requires disable-verity + remount)
     echo "[anti-emu] Using adb root + build.prop edit..."
-    $ADB remount 2>/dev/null
-    $ADB shell "sed -i \
-        -e 's/^ro.product.model=.*/ro.product.model=Pixel 8/' \
-        -e 's/^ro.product.brand=.*/ro.product.brand=google/' \
-        -e 's/^ro.product.device=.*/ro.product.device=shiba/' \
-        -e 's/^ro.hardware=.*/ro.hardware=shiba/' \
-        -e 's/^ro.build.type=.*/ro.build.type=user/' \
-        -e 's/^ro.build.tags=.*/ro.build.tags=release-keys/' \
-        -e '/^ro.kernel.qemu=/d' \
-        /system/build.prop" 2>/dev/null && \
-        echo "[anti-emu] build.prop patched (reboot needed for ro.* props)" || \
-        echo "[anti-emu] build.prop patch failed (system may be read-only)"
+    # disable-verity is needed once to make /system writable
+    if ! $ADB shell "mount | grep '/system'" 2>/dev/null | grep -q " rw"; then
+        $ADB disable-verity 2>/dev/null
+        $ADB reboot 2>/dev/null
+        sleep 15
+        wait_for_boot
+        sleep 5
+        $ADB root 2>/dev/null; sleep 2
+    fi
+    $ADB remount 2>/dev/null; sleep 2
+    if $ADB shell "touch /system/.write_test && rm /system/.write_test" 2>/dev/null; then
+        $ADB shell "sed -i \
+            -e 's/^ro.product.model=.*/ro.product.model=Pixel 8/' \
+            -e 's/^ro.product.brand=.*/ro.product.brand=google/' \
+            -e 's/^ro.product.device=.*/ro.product.device=shiba/' \
+            -e 's/^ro.hardware=.*/ro.hardware=shiba/' \
+            -e 's/^ro.build.type=.*/ro.build.type=user/' \
+            -e 's/^ro.build.tags=.*/ro.build.tags=release-keys/' \
+            -e '/^ro.kernel.qemu=/d' \
+            /system/build.prop" 2>/dev/null && \
+            echo "[anti-emu] build.prop patched (persists across reboots)" || \
+            echo "[anti-emu] build.prop sed failed"
+    else
+        echo "[anti-emu] /system still read-only after remount — use ROOTED=true for full anti-emu"
+    fi
     $ADB unroot 2>/dev/null
 fi
 
